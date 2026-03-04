@@ -120,7 +120,9 @@ class JiraProjectExtractor:
             out: list[dict[str, Any]] = []
             for block in self._chunk(parent_keys, size=100):
                 keys = self._quote_values(block)
-                jql = f"parent in ({keys}) ORDER BY parent ASC, created ASC"
+                # NOTE: Some JIRA environments reject sorting by `parent` in ORDER BY.
+                # Keep server-side query valid and perform parent-ordering downstream in pandas.
+                jql = f"parent in ({keys}) ORDER BY created ASC, key ASC"
                 out.extend(
                     self.client.search_issues(
                         jql=jql,

@@ -64,7 +64,21 @@ class JiraDataNormalizer:
             row = JiraDataNormalizer._issue_row(issue)
             row["level"] = level_name
             rows.append(row)
-        return pd.DataFrame(rows)
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return df
+
+        if level_name == "primary":
+            return df.sort_values(by=["created", "issue_key"], kind="stable", na_position="last").reset_index(drop=True)
+
+        return (
+            df.sort_values(
+                by=["parent_key", "created", "issue_key"],
+                kind="stable",
+                na_position="last",
+            )
+            .reset_index(drop=True)
+        )
 
     @staticmethod
     def normalize(extracted: ExtractedIssueBundles) -> NormalizedJiraData:

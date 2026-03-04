@@ -5,6 +5,7 @@ A modular Python application that:
 - Connects to a fixed JIRA URL: `https://wim-jira.wellsfargo.com`.
 - Uses TLS verification certificate path: `~/Downloads/WellsFargoVerification.cer`.
 - Applies mandatory JQL filters first to reduce extraction load: `project`, `issuetype`, `components`, `created >=`, and `"Start date" >=`.
+- Uses JQL sorting compatible with restricted JIRA instances (avoids `ORDER BY parent`), and then orders child/subtask tables by parent locally.
 - Extracts a **limited hierarchy only**: selected issue type (primary level) → direct child issues → child subtasks.
 - Extracts one additional linked-issues list for issues linked to any of the in-scope primary/child/subtask issues, without traversing deeper.
 - Produces ordered level-wise tables (`primary_issues`, `child_issues`, `subtask_issues`, `linked_scope_issues`) plus normalized relational tables.
