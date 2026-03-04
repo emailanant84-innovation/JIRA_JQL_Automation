@@ -32,14 +32,16 @@ class JiraExtractionGUI:
         form = ttk.Frame(self.root, padding=10)
         form.pack(fill="x")
 
-        labels = ["JIRA URL", "Email", "API Token", "Project Key", "Output Folder"]
-        self.inputs: dict[str, tk.Entry] = {}
+        ttk.Label(form, text="JIRA URL (fixed)").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Label(form, text="https://wim-jira.wellsfargo.com").grid(row=0, column=1, sticky="w", pady=3)
 
-        for i, text in enumerate(labels):
-            ttk.Label(form, text=text).grid(row=i, column=0, sticky="w", pady=3)
-            entry = ttk.Entry(form, width=90, show="*" if text == "API Token" else "")
-            entry.grid(row=i, column=1, sticky="ew", pady=3)
-            self.inputs[text] = entry
+        ttk.Label(form, text="Project Key").grid(row=1, column=0, sticky="w", pady=3)
+        self.project_key_entry = ttk.Entry(form, width=60)
+        self.project_key_entry.grid(row=1, column=1, sticky="ew", pady=3)
+
+        ttk.Label(form, text="JIRA Password").grid(row=2, column=0, sticky="w", pady=3)
+        self.password_entry = ttk.Entry(form, width=60, show="*")
+        self.password_entry.grid(row=2, column=1, sticky="ew", pady=3)
 
         form.columnconfigure(1, weight=1)
         ttk.Button(form, text="Run Extraction", command=self.run_extraction).grid(
@@ -76,16 +78,16 @@ class JiraExtractionGUI:
 
     def run_extraction(self) -> None:
         try:
-            cfg = JiraConfig(
-                base_url=self.inputs["JIRA URL"].get().strip(),
-                email=self.inputs["Email"].get().strip(),
-                api_token=self.inputs["API Token"].get().strip(),
-            )
-            project_key = self.inputs["Project Key"].get().strip()
-            out_dir = self.inputs["Output Folder"].get().strip() or "output"
+            project_key = self.project_key_entry.get().strip()
+            password = self.password_entry.get().strip()
+            if not project_key or not password:
+                raise ValueError("Project key and JIRA password are required.")
 
+            cfg = JiraConfig(password=password)
             orchestrator = JiraExtractionOrchestrator(cfg)
             self.results = orchestrator.run(project_key)
+
+            out_dir = cfg.downloads_output_dir()
             orchestrator.save_to_csv(self.results, out_dir)
             self.base_tables = asdict(self.results)
             self._render_all(self.base_tables)

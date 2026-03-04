@@ -14,6 +14,7 @@ class JiraExtractionOrchestrator:
     """Coordinate extraction, normalization, cleaning and persistence."""
 
     def __init__(self, config: JiraConfig) -> None:
+        self.config = config
         self.client = JiraApiClient(config)
         self.extractor = JiraProjectExtractor(self.client)
 
@@ -27,10 +28,10 @@ class JiraExtractionOrchestrator:
         }
         return NormalizedJiraData(**cleaned)
 
-    @staticmethod
-    def save_to_csv(data: NormalizedJiraData, out_dir: str | Path) -> None:
-        out_path = Path(out_dir)
+    def save_to_csv(self, data: NormalizedJiraData, out_dir: str | Path | None = None) -> Path:
+        out_path = Path(out_dir) if out_dir else self.config.downloads_output_dir()
         out_path.mkdir(parents=True, exist_ok=True)
 
         for name, df in asdict(data).items():
             df.to_csv(out_path / f"{name}.csv", index=False)
+        return out_path
