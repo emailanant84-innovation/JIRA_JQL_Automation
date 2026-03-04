@@ -6,9 +6,10 @@ A modular Python application that:
 - Uses TLS verification certificate path: `~/Downloads/WellsFargoVerification.cer`.
 - Applies mandatory JQL filters first to reduce extraction load: `project`, `issuetype`, `components`, `created >=`, and `"Start date" >=`.
 - Uses JQL sorting compatible with restricted JIRA instances (avoids `ORDER BY parent`), and then orders child/subtask tables by parent locally.
-- Extracts a **limited hierarchy only**: selected issue type (primary level) → direct child issues → child subtasks.
+- Extracts a **limited hierarchy only**: selected issue type (primary level) → direct child issues (via `parent` and `"Epic Link"`) → child subtasks.
 - Extracts one additional linked-issues list for issues linked to any of the in-scope primary/child/subtask issues, without traversing deeper.
 - Produces ordered level-wise tables (`primary_issues`, `child_issues`, `subtask_issues`, `linked_scope_issues`) plus normalized relational tables.
+- Includes `labels` in primary issue rows and includes `labels`, `scope`, `test_criteria`, and `testing_results` in subtask rows when those fields exist.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
 - Saves output automatically to `~/Downloads/jira_project_extractor_output`.
 - Logs process events, issue-level failures, and exceptions from modules into `~/Downloads/jira_project_extractor_output/jira_project_extractor.log`.

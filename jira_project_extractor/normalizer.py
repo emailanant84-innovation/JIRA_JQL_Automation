@@ -35,8 +35,38 @@ class JiraDataNormalizer:
         return field_obj.get("displayName") or field_obj.get("name")
 
     @staticmethod
+    def _stringify_custom_value(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, (str, int, float, bool)):
+            return str(value)
+        if isinstance(value, dict):
+            for k in ["value", "name", "displayName", "text"]:
+                if value.get(k) is not None:
+                    return str(value.get(k))
+            return str(value)
+        if isinstance(value, list):
+            flattened = [JiraDataNormalizer._stringify_custom_value(v) for v in value]
+            return ", ".join([v for v in flattened if v])
+        return str(value)
+
+    @staticmethod
+    def _get_named_custom_field(issue: dict[str, Any], aliases: list[str]) -> str | None:
+        fields = issue.get("fields", {})
+        names = issue.get("names", {})
+        alias_set = {name.strip().lower() for name in aliases}
+
+        for field_key, friendly_name in names.items():
+            if not isinstance(friendly_name, str):
+                continue
+            if friendly_name.strip().lower() in alias_set:
+                return JiraDataNormalizer._stringify_custom_value(fields.get(field_key))
+        return None
+
+    @staticmethod
     def _issue_row(issue: dict[str, Any]) -> dict[str, Any]:
         fields = issue.get("fields", {})
+        labels = fields.get("labels", [])
         return {
             "issue_id": issue.get("id"),
             "issue_key": issue.get("key"),
@@ -45,6 +75,7 @@ class JiraDataNormalizer:
             "issue_type": ((fields.get("issuetype") or {}).get("name")),
             "summary": fields.get("summary"),
             "description": fields.get("description"),
+            "labels": ", ".join(labels) if labels else None,
             "status": ((fields.get("status") or {}).get("name")),
             "priority": ((fields.get("priority") or {}).get("name")),
             "assignee": JiraDataNormalizer._name(fields.get("assignee")),
@@ -63,7 +94,20 @@ class JiraDataNormalizer:
         for issue in issues:
             row = JiraDataNormalizer._issue_row(issue)
             row["level"] = level_name
+
+            if level_name == "subtask":
+                row["scope"] = JiraDataNormalizer._get_named_custom_field(issue, ["Scope"])
+                row["test_criteria"] = JiraDataNormalizer._get_named_custom_field(
+                    issue,
+                    ["Test Criteria", "Acceptance Criteria"],
+                )
+                row["testing_results"] = JiraDataNormalizer._get_named_custom_field(
+                    issue,
+                    ["Testing Results", "Test Results"],
+                )
+
             rows.append(row)
+
         df = pd.DataFrame(rows)
         if df.empty:
             return df

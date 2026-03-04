@@ -113,16 +113,24 @@ class JiraProjectExtractor:
             logger.exception("Failed to build primary JQL")
             raise
 
-    def _extract_children(self, parent_keys: list[str]) -> list[dict[str, Any]]:
+    def _extract_children(self, project_key: str, parent_keys: list[str]) -> list[dict[str, Any]]:
+        """Fetch children via both parent and Epic Link semantics.
+
+        This handles classic parent-child/subtask and Epic->Story/Task style hierarchies.
+        """
         try:
             if not parent_keys:
                 return []
             out: list[dict[str, Any]] = []
+            project = project_key.replace('"', '\\"')
+
             for block in self._chunk(parent_keys, size=100):
                 keys = self._quote_values(block)
-                # NOTE: Some JIRA environments reject sorting by `parent` in ORDER BY.
-                # Keep server-side query valid and perform parent-ordering downstream in pandas.
-                jql = f"parent in ({keys}) ORDER BY created ASC, key ASC"
+                jql = (
+                    f'project = "{project}" AND '
+                    f'((parent in ({keys})) OR ("Epic Link" in ({keys}))) '
+                    "ORDER BY created ASC, key ASC"
+                )
                 out.extend(
                     self.client.search_issues(
                         jql=jql,
@@ -132,7 +140,7 @@ class JiraProjectExtractor:
                 )
             return out
         except Exception:
-            logger.exception("Failed extracting children for parents")
+            logger.exception("Failed extracting children for project=%s", project_key)
             raise
 
     @staticmethod
@@ -162,9 +170,9 @@ class JiraProjectExtractor:
             )
 
             primary_keys = [issue["key"] for issue in primary_issues]
-            child_issues = self._extract_children(primary_keys)
+            child_issues = self._extract_children(project_key, primary_keys)
             child_keys = [issue["key"] for issue in child_issues]
-            subtask_issues = self._extract_children(child_keys)
+            subtask_issues = self._extract_children(project_key, child_keys)
 
             in_scope_keys = set(primary_keys) | set(child_keys) | {issue["key"] for issue in subtask_issues}
             anchor = [*primary_issues, *child_issues, *subtask_issues]
