@@ -7,6 +7,7 @@ from tkinter import messagebox, ttk
 import pandas as pd
 
 from .config import JiraConfig
+from .extractor import ProjectQueryFilters
 from .normalizer import NormalizedJiraData
 from .orchestrator import JiraExtractionOrchestrator
 
@@ -19,7 +20,7 @@ class JiraExtractionGUI:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("JIRA Project Extractor")
-        self.root.geometry("1200x760")
+        self.root.geometry("1280x820")
 
         self.results: NormalizedJiraData | None = None
         self.table_views: dict[str, ttk.Treeview] = {}
@@ -36,27 +37,45 @@ class JiraExtractionGUI:
         ttk.Label(form, text="https://wim-jira.wellsfargo.com").grid(row=0, column=1, sticky="w", pady=3)
 
         ttk.Label(form, text="Project Key").grid(row=1, column=0, sticky="w", pady=3)
-        self.project_key_entry = ttk.Entry(form, width=60)
+        self.project_key_entry = ttk.Entry(form, width=70)
         self.project_key_entry.grid(row=1, column=1, sticky="ew", pady=3)
 
         ttk.Label(form, text="JIRA Password").grid(row=2, column=0, sticky="w", pady=3)
-        self.password_entry = ttk.Entry(form, width=60, show="*")
+        self.password_entry = ttk.Entry(form, width=70, show="*")
         self.password_entry.grid(row=2, column=1, sticky="ew", pady=3)
+
+        # Mandatory JQL extraction filters aligned directly below key/password fields.
+        ttk.Label(form, text="Components (comma-separated, mandatory)").grid(row=3, column=0, sticky="w", pady=3)
+        self.components_entry = ttk.Entry(form, width=70)
+        self.components_entry.grid(row=3, column=1, sticky="ew", pady=3)
+
+        ttk.Label(form, text="Creation Date >= (YYYY-MM-DD, mandatory)").grid(row=4, column=0, sticky="w", pady=3)
+        self.creation_date_entry = ttk.Entry(form, width=70)
+        self.creation_date_entry.grid(row=4, column=1, sticky="ew", pady=3)
+
+        ttk.Label(form, text="Desired Start Date >= (YYYY-MM-DD, mandatory)").grid(row=5, column=0, sticky="w", pady=3)
+        self.desired_start_entry = ttk.Entry(form, width=70)
+        self.desired_start_entry.grid(row=5, column=1, sticky="ew", pady=3)
+
+        # Issue-key table filter below extraction inputs.
+        ttk.Label(form, text="Issue Key Filter (comma-separated)").grid(row=6, column=0, sticky="w", pady=3)
+        self.issue_key_filter_entry = ttk.Entry(form, width=70)
+        self.issue_key_filter_entry.grid(row=6, column=1, sticky="ew", pady=3)
 
         form.columnconfigure(1, weight=1)
         ttk.Button(form, text="Run Extraction", command=self.run_extraction).grid(
-            row=0, column=2, padx=8, rowspan=2, sticky="ns"
+            row=1, column=2, padx=8, rowspan=2, sticky="ns"
         )
-        ttk.Button(form, text="Apply Filter", command=self.apply_filter).grid(
-            row=2, column=2, padx=8, sticky="ew"
-        )
-        ttk.Button(form, text="Reset", command=self.reset_filter).grid(
+        ttk.Button(form, text="Apply Issue Key Filter", command=self.apply_filter).grid(
             row=3, column=2, padx=8, sticky="ew"
         )
+        ttk.Button(form, text="Reset Filter", command=self.reset_filter).grid(
+            row=4, column=2, padx=8, sticky="ew"
+        )
 
-        self.filter_var = tk.StringVar()
-        ttk.Label(form, text="Issue key/type filter").grid(row=4, column=2, sticky="w")
-        ttk.Entry(form, textvariable=self.filter_var).grid(row=5, column=2, sticky="ew")
+    @staticmethod
+    def _parse_csv_values(raw: str) -> list[str]:
+        return [part.strip() for part in raw.split(",") if part.strip()]
 
     def _build_tabs(self) -> None:
         self.notebook = ttk.Notebook(self.root)
@@ -80,12 +99,24 @@ class JiraExtractionGUI:
         try:
             project_key = self.project_key_entry.get().strip()
             password = self.password_entry.get().strip()
-            if not project_key or not password:
-                raise ValueError("Project key and JIRA password are required.")
+            components = self._parse_csv_values(self.components_entry.get().strip())
+            creation_date = self.creation_date_entry.get().strip()
+            desired_start_date = self.desired_start_entry.get().strip()
+
+            if not project_key or not password or not components or not creation_date or not desired_start_date:
+                raise ValueError(
+                    "Project key, JIRA password, components, creation date, and desired start date are mandatory."
+                )
 
             cfg = JiraConfig(password=password)
+            query_filters = ProjectQueryFilters(
+                components=components,
+                created_on_or_after=creation_date,
+                desired_start_on_or_after=desired_start_date,
+            )
+
             orchestrator = JiraExtractionOrchestrator(cfg)
-            self.results = orchestrator.run(project_key)
+            self.results = orchestrator.run(project_key, query_filters)
 
             out_dir = cfg.downloads_output_dir()
             orchestrator.save_to_csv(self.results, out_dir)
@@ -115,8 +146,10 @@ class JiraExtractionGUI:
     def apply_filter(self) -> None:
         if not self.base_tables:
             return
-        needle = self.filter_var.get().strip().lower()
-        if not needle:
+
+        raw_filter = self.issue_key_filter_entry.get().strip()
+        issue_keys = {value.upper() for value in self._parse_csv_values(raw_filter)}
+        if not issue_keys:
             self._render_all(self.base_tables)
             return
 
@@ -126,16 +159,20 @@ class JiraExtractionGUI:
                 filtered[name] = df
                 continue
 
+            key_columns = [col for col in df.columns if "key" in col.lower()]
+            if not key_columns:
+                filtered[name] = df
+                continue
+
             mask = pd.Series(False, index=df.index)
-            for col in df.columns:
-                if "key" in col.lower() or "type" in col.lower():
-                    mask = mask | df[col].astype(str).str.lower().str.contains(needle, na=False)
+            for col in key_columns:
+                mask = mask | df[col].astype(str).str.upper().isin(issue_keys)
             filtered[name] = df[mask]
 
         self._render_all(filtered)
 
     def reset_filter(self) -> None:
-        self.filter_var.set("")
+        self.issue_key_filter_entry.delete(0, tk.END)
         if self.base_tables:
             self._render_all(self.base_tables)
 

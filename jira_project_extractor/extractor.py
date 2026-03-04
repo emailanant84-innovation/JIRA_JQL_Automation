@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 from .jira_client import JiraApiClient
@@ -26,17 +27,47 @@ CORE_FIELDS = [
     "subtasks",
     "fixVersions",
     "components",
+    "customfield_*",
 ]
+
+
+@dataclass(slots=True)
+class ProjectQueryFilters:
+    components: list[str]
+    created_on_or_after: str
+    desired_start_on_or_after: str
 
 
 class JiraProjectExtractor:
     """Extract all issues in a project plus linked issues and hierarchy."""
 
-    def __init__(self, client: JiraApiClient) -> None:
+    def __init__(self, client: JiraApiClient, desired_start_field: str = '"Start date"') -> None:
         self.client = client
+        self.desired_start_field = desired_start_field
 
-    def extract_project_graph(self, project_key: str) -> list[dict[str, Any]]:
-        base_jql = f'project = "{project_key}" ORDER BY created ASC'
+    @staticmethod
+    def _quote_values(values: list[str]) -> str:
+        escaped = [value.replace('"', '\\"') for value in values]
+        return ", ".join(f'"{value}"' for value in escaped)
+
+    def build_project_jql(self, project_key: str, query_filters: ProjectQueryFilters) -> str:
+        project = project_key.replace('"', '\\"')
+        component_list = self._quote_values(query_filters.components)
+
+        return (
+            f'project = "{project}" '
+            f'AND component in ({component_list}) '
+            f'AND created >= "{query_filters.created_on_or_after}" '
+            f'AND {self.desired_start_field} >= "{query_filters.desired_start_on_or_after}" '
+            "ORDER BY created ASC"
+        )
+
+    def extract_project_graph(
+        self,
+        project_key: str,
+        query_filters: ProjectQueryFilters,
+    ) -> list[dict[str, Any]]:
+        base_jql = self.build_project_jql(project_key, query_filters)
         seed_issues = self.client.search_issues(
             jql=base_jql,
             fields=CORE_FIELDS,

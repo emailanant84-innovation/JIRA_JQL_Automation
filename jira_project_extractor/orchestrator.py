@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .cleaner import DataCleaner
 from .config import JiraConfig
-from .extractor import JiraProjectExtractor
+from .extractor import JiraProjectExtractor, ProjectQueryFilters
 from .jira_client import JiraApiClient
 from .normalizer import JiraDataNormalizer, NormalizedJiraData
 
@@ -18,8 +18,8 @@ class JiraExtractionOrchestrator:
         self.client = JiraApiClient(config)
         self.extractor = JiraProjectExtractor(self.client)
 
-    def run(self, project_key: str) -> NormalizedJiraData:
-        raw_issues = self.extractor.extract_project_graph(project_key)
+    def run(self, project_key: str, query_filters: ProjectQueryFilters) -> NormalizedJiraData:
+        raw_issues = self.extractor.extract_project_graph(project_key, query_filters)
         normalized = JiraDataNormalizer.normalize(raw_issues)
 
         cleaned = {
