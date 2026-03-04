@@ -9,11 +9,13 @@ A modular Python application that:
 - Normalizes issue, hierarchy, links, labels, components, and versions into clean pandas DataFrames.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
 - Saves output automatically to `~/Downloads/jira_project_extractor_output`.
+- Logs process events, issue-level failures, and exceptions from modules into `~/Downloads/jira_project_extractor_output/jira_project_extractor.log`.
 - Provides a Tkinter GUI for running extraction and interactive filtering by **multiple issue keys** entered as comma-separated values.
 
 ## Modules
 
 - `jira_project_extractor/config.py`: fixed connection settings + downloads path helpers.
+- `jira_project_extractor/logging_utils.py`: centralized logger setup and file handler.
 - `jira_project_extractor/jira_client.py`: JIRA Python SDK client and pagination.
 - `jira_project_extractor/extractor.py`: JQL builder + project and linked issue graph extraction.
 - `jira_project_extractor/normalizer.py`: nested JSON → normalized DataFrames.

@@ -7,31 +7,48 @@ from .cleaner import DataCleaner
 from .config import JiraConfig
 from .extractor import JiraProjectExtractor, ProjectQueryFilters
 from .jira_client import JiraApiClient
+from .logging_utils import get_logger
 from .normalizer import JiraDataNormalizer, NormalizedJiraData
+
+logger = get_logger("orchestrator")
 
 
 class JiraExtractionOrchestrator:
     """Coordinate extraction, normalization, cleaning and persistence."""
 
     def __init__(self, config: JiraConfig) -> None:
-        self.config = config
-        self.client = JiraApiClient(config)
-        self.extractor = JiraProjectExtractor(self.client)
+        try:
+            self.config = config
+            self.client = JiraApiClient(config)
+            self.extractor = JiraProjectExtractor(self.client)
+        except Exception:
+            logger.exception("Failed to initialize orchestrator")
+            raise
 
     def run(self, project_key: str, query_filters: ProjectQueryFilters) -> NormalizedJiraData:
-        raw_issues = self.extractor.extract_project_graph(project_key, query_filters)
-        normalized = JiraDataNormalizer.normalize(raw_issues)
+        try:
+            raw_issues = self.extractor.extract_project_graph(project_key, query_filters)
+            normalized = JiraDataNormalizer.normalize(raw_issues)
 
-        cleaned = {
-            name: DataCleaner.clean_dataframe(df)
-            for name, df in asdict(normalized).items()
-        }
-        return NormalizedJiraData(**cleaned)
+            cleaned = {
+                name: DataCleaner.clean_dataframe(df)
+                for name, df in asdict(normalized).items()
+            }
+            logger.info("Pipeline run completed for project %s", project_key)
+            return NormalizedJiraData(**cleaned)
+        except Exception:
+            logger.exception("Pipeline run failed for project %s", project_key)
+            raise
 
     def save_to_csv(self, data: NormalizedJiraData, out_dir: str | Path | None = None) -> Path:
-        out_path = Path(out_dir) if out_dir else self.config.downloads_output_dir()
-        out_path.mkdir(parents=True, exist_ok=True)
+        try:
+            out_path = Path(out_dir) if out_dir else self.config.downloads_output_dir()
+            out_path.mkdir(parents=True, exist_ok=True)
 
-        for name, df in asdict(data).items():
-            df.to_csv(out_path / f"{name}.csv", index=False)
-        return out_path
+            for name, df in asdict(data).items():
+                df.to_csv(out_path / f"{name}.csv", index=False)
+            logger.info("Saved normalized CSV files to %s", out_path)
+            return out_path
+        except Exception:
+            logger.exception("Failed to save CSV outputs")
+            raise
