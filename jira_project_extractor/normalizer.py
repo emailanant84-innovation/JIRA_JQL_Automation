@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from .extractor import ExtractedIssueBundles
 from .logging_utils import get_logger
 
 logger = get_logger("normalizer")
@@ -12,6 +13,10 @@ logger = get_logger("normalizer")
 
 @dataclass
 class NormalizedJiraData:
+    primary_issues: pd.DataFrame
+    child_issues: pd.DataFrame
+    subtask_issues: pd.DataFrame
+    linked_scope_issues: pd.DataFrame
     issues: pd.DataFrame
     hierarchy: pd.DataFrame
     links: pd.DataFrame
@@ -30,8 +35,41 @@ class JiraDataNormalizer:
         return field_obj.get("displayName") or field_obj.get("name")
 
     @staticmethod
-    def normalize(issues: list[dict[str, Any]]) -> NormalizedJiraData:
+    def _issue_row(issue: dict[str, Any]) -> dict[str, Any]:
+        fields = issue.get("fields", {})
+        return {
+            "issue_id": issue.get("id"),
+            "issue_key": issue.get("key"),
+            "parent_key": ((fields.get("parent") or {}).get("key")),
+            "project_key": ((fields.get("project") or {}).get("key")),
+            "issue_type": ((fields.get("issuetype") or {}).get("name")),
+            "summary": fields.get("summary"),
+            "description": fields.get("description"),
+            "status": ((fields.get("status") or {}).get("name")),
+            "priority": ((fields.get("priority") or {}).get("name")),
+            "assignee": JiraDataNormalizer._name(fields.get("assignee")),
+            "reporter": JiraDataNormalizer._name(fields.get("reporter")),
+            "creator": JiraDataNormalizer._name(fields.get("creator")),
+            "created": fields.get("created"),
+            "updated": fields.get("updated"),
+            "due_date": fields.get("duedate"),
+            "resolution": ((fields.get("resolution") or {}).get("name")),
+            "resolution_date": fields.get("resolutiondate"),
+        }
+
+    @staticmethod
+    def _level_df(issues: list[dict[str, Any]], level_name: str) -> pd.DataFrame:
+        rows = []
+        for issue in issues:
+            row = JiraDataNormalizer._issue_row(issue)
+            row["level"] = level_name
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def normalize(extracted: ExtractedIssueBundles) -> NormalizedJiraData:
         try:
+            all_issues = extracted.all_issues()
             issue_rows: list[dict[str, Any]] = []
             hierarchy_rows: list[dict[str, Any]] = []
             link_rows: list[dict[str, Any]] = []
@@ -39,31 +77,12 @@ class JiraDataNormalizer:
             component_rows: list[dict[str, Any]] = []
             version_rows: list[dict[str, Any]] = []
 
-            for issue in issues:
+            for issue in all_issues:
                 fields = issue.get("fields", {})
                 issue_key = issue.get("key")
                 issue_type = (fields.get("issuetype") or {}).get("name")
 
-                issue_rows.append(
-                    {
-                        "issue_id": issue.get("id"),
-                        "issue_key": issue_key,
-                        "project_key": ((fields.get("project") or {}).get("key")),
-                        "issue_type": issue_type,
-                        "summary": fields.get("summary"),
-                        "description": fields.get("description"),
-                        "status": ((fields.get("status") or {}).get("name")),
-                        "priority": ((fields.get("priority") or {}).get("name")),
-                        "assignee": JiraDataNormalizer._name(fields.get("assignee")),
-                        "reporter": JiraDataNormalizer._name(fields.get("reporter")),
-                        "creator": JiraDataNormalizer._name(fields.get("creator")),
-                        "created": fields.get("created"),
-                        "updated": fields.get("updated"),
-                        "due_date": fields.get("duedate"),
-                        "resolution": ((fields.get("resolution") or {}).get("name")),
-                        "resolution_date": fields.get("resolutiondate"),
-                    }
-                )
+                issue_rows.append(JiraDataNormalizer._issue_row(issue))
 
                 parent = fields.get("parent")
                 if parent:
@@ -135,6 +154,10 @@ class JiraDataNormalizer:
                     )
 
             out = NormalizedJiraData(
+                primary_issues=JiraDataNormalizer._level_df(extracted.primary_issues, "primary"),
+                child_issues=JiraDataNormalizer._level_df(extracted.child_issues, "child"),
+                subtask_issues=JiraDataNormalizer._level_df(extracted.subtask_issues, "subtask"),
+                linked_scope_issues=JiraDataNormalizer._level_df(extracted.linked_issues, "linked"),
                 issues=pd.DataFrame(issue_rows),
                 hierarchy=pd.DataFrame(hierarchy_rows),
                 links=pd.DataFrame(link_rows),
@@ -142,7 +165,13 @@ class JiraDataNormalizer:
                 components=pd.DataFrame(component_rows),
                 fix_versions=pd.DataFrame(version_rows),
             )
-            logger.info("Normalization complete for %s issues", len(issue_rows))
+            logger.info(
+                "Normalization complete: primary=%s child=%s subtask=%s linked=%s",
+                len(out.primary_issues),
+                len(out.child_issues),
+                len(out.subtask_issues),
+                len(out.linked_scope_issues),
+            )
             return out
         except Exception:
             logger.exception("Failed while normalizing JIRA issues")

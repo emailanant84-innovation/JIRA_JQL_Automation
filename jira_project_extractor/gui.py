@@ -18,13 +18,24 @@ logger = get_logger("gui")
 class JiraExtractionGUI:
     """Tkinter GUI to orchestrate extraction and inspect normalized tables."""
 
-    TABLES = ["issues", "hierarchy", "links", "labels", "components", "fix_versions"]
+    TABLES = [
+        "primary_issues",
+        "child_issues",
+        "subtask_issues",
+        "linked_scope_issues",
+        "issues",
+        "hierarchy",
+        "links",
+        "labels",
+        "components",
+        "fix_versions",
+    ]
 
     def __init__(self) -> None:
         try:
             self.root = tk.Tk()
             self.root.title("JIRA Project Extractor")
-            self.root.geometry("1280x820")
+            self.root.geometry("1400x860")
 
             self.results: NormalizedJiraData | None = None
             self.table_views: dict[str, ttk.Treeview] = {}
@@ -52,31 +63,35 @@ class JiraExtractionGUI:
             self.password_entry = ttk.Entry(form, width=70, show="*")
             self.password_entry.grid(row=2, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Components (comma-separated, mandatory)").grid(row=3, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Issue Type (mandatory, e.g. Epic/Feature/Task)").grid(row=3, column=0, sticky="w", pady=3)
+            self.issue_type_entry = ttk.Entry(form, width=70)
+            self.issue_type_entry.grid(row=3, column=1, sticky="ew", pady=3)
+
+            ttk.Label(form, text="Components (comma-separated, mandatory)").grid(row=4, column=0, sticky="w", pady=3)
             self.components_entry = ttk.Entry(form, width=70)
-            self.components_entry.grid(row=3, column=1, sticky="ew", pady=3)
+            self.components_entry.grid(row=4, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Creation Date >= (YYYY-MM-DD, mandatory)").grid(row=4, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Creation Date >= (YYYY-MM-DD, mandatory)").grid(row=5, column=0, sticky="w", pady=3)
             self.creation_date_entry = ttk.Entry(form, width=70)
-            self.creation_date_entry.grid(row=4, column=1, sticky="ew", pady=3)
+            self.creation_date_entry.grid(row=5, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Desired Start Date >= (YYYY-MM-DD, mandatory)").grid(row=5, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Desired Start Date >= (YYYY-MM-DD, mandatory)").grid(row=6, column=0, sticky="w", pady=3)
             self.desired_start_entry = ttk.Entry(form, width=70)
-            self.desired_start_entry.grid(row=5, column=1, sticky="ew", pady=3)
+            self.desired_start_entry.grid(row=6, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Issue Key Filter (comma-separated)").grid(row=6, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Issue Key Filter (comma-separated)").grid(row=7, column=0, sticky="w", pady=3)
             self.issue_key_filter_entry = ttk.Entry(form, width=70)
-            self.issue_key_filter_entry.grid(row=6, column=1, sticky="ew", pady=3)
+            self.issue_key_filter_entry.grid(row=7, column=1, sticky="ew", pady=3)
 
             form.columnconfigure(1, weight=1)
             ttk.Button(form, text="Run Extraction", command=self.run_extraction).grid(
                 row=1, column=2, padx=8, rowspan=2, sticky="ns"
             )
             ttk.Button(form, text="Apply Issue Key Filter", command=self.apply_filter).grid(
-                row=3, column=2, padx=8, sticky="ew"
+                row=4, column=2, padx=8, sticky="ew"
             )
             ttk.Button(form, text="Reset Filter", command=self.reset_filter).grid(
-                row=4, column=2, padx=8, sticky="ew"
+                row=5, column=2, padx=8, sticky="ew"
             )
         except Exception:
             logger.exception("Failed to build GUI form")
@@ -116,13 +131,14 @@ class JiraExtractionGUI:
         try:
             project_key = self.project_key_entry.get().strip()
             password = self.password_entry.get().strip()
+            issue_type = self.issue_type_entry.get().strip()
             components = self._parse_csv_values(self.components_entry.get().strip())
             creation_date = self.creation_date_entry.get().strip()
             desired_start_date = self.desired_start_entry.get().strip()
 
-            if not project_key or not password or not components or not creation_date or not desired_start_date:
+            if not project_key or not password or not issue_type or not components or not creation_date or not desired_start_date:
                 raise ValueError(
-                    "Project key, JIRA password, components, creation date, and desired start date are mandatory."
+                    "Project key, password, issue type, components, creation date, and desired start date are mandatory."
                 )
 
             cfg = JiraConfig(password=password)
@@ -130,6 +146,7 @@ class JiraExtractionGUI:
                 components=components,
                 created_on_or_after=creation_date,
                 desired_start_on_or_after=desired_start_date,
+                issue_type=issue_type,
             )
 
             orchestrator = JiraExtractionOrchestrator(cfg)
@@ -161,7 +178,7 @@ class JiraExtractionGUI:
         tree["columns"] = columns
         for col in columns:
             tree.heading(col, text=col)
-            tree.column(col, width=150, anchor="w")
+            tree.column(col, width=170, anchor="w")
 
         for _, row in df.fillna("").iterrows():
             tree.insert("", "end", values=list(row.values))
