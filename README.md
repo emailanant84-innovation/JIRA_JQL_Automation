@@ -11,6 +11,7 @@ A modular Python application that:
 - Produces ordered level-wise tables (`primary_issues`, `child_issues`, `subtask_issues`, `linked_scope_issues`) plus normalized relational tables.
 - Includes `labels` in primary issue rows and includes `labels`, `scope`, `test_criteria`, and `testing_results` in subtask rows when those fields exist.
 - Resolves custom subtask aliases by JIRA **field label metadata** (catalog + response labels), not only field IDs, to improve coverage for aliased fields such as Scope / A / B-style labels.
+- Explicitly maps subtask fields using your provided IDs where available: Scope=`customfield_12884`, Test Criteria=`customfield_10010`, Testing Results=`customfield_35544` (with typo-safe fallback `cutomfield_35544`).
 - Derives `parent_key` for child issues from Epic-link semantics when explicit `parent` is not present, so child rows correctly reference their Epic/Feature parent.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
 - Saves output automatically to `~/Downloads/jira_project_extractor_output`.

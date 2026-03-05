@@ -130,6 +130,25 @@ class JiraProjectExtractor:
         return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema"])
 
     @staticmethod
+    def _normalized_label(text: str) -> str:
+        return "".join(ch for ch in text.lower() if ch.isalnum())
+
+    @staticmethod
+    def _issue_field_labels(issue: dict[str, Any]) -> dict[str, str]:
+        labels: dict[str, str] = {}
+        names = issue.get("names", {})
+        if isinstance(names, dict):
+            for field_id, label in names.items():
+                if isinstance(field_id, str) and isinstance(label, str):
+                    labels[field_id] = label
+        catalog = issue.get("__field_catalog", {})
+        if isinstance(catalog, dict):
+            for field_id, label in catalog.items():
+                if isinstance(field_id, str) and isinstance(label, str) and field_id not in labels:
+                    labels[field_id] = label
+        return labels
+
+    @staticmethod
     def _derive_parent_key(issue: dict[str, Any], allowed_parents: set[str]) -> str | None:
         fields = issue.get("fields", {})
         parent_key = ((fields.get("parent") or {}).get("key"))
@@ -141,6 +160,23 @@ class JiraProjectExtractor:
             epic_parent = fields.get(epic_field_id)
             if isinstance(epic_parent, str) and epic_parent in allowed_parents:
                 return epic_parent
+
+        # Fallback: detect likely Epic/Parent link fields via field label metadata.
+        labels = JiraProjectExtractor._issue_field_labels(issue)
+        link_aliases = {"epiclink", "parentlink", "featurelink"}
+        for field_id, label in labels.items():
+            if JiraProjectExtractor._normalized_label(label) not in link_aliases:
+                continue
+            candidate = fields.get(field_id)
+            if isinstance(candidate, str) and candidate in allowed_parents:
+                return candidate
+
+        # Last fallback: any custom field carrying one of allowed parent keys.
+        for field_id, value in fields.items():
+            if not isinstance(field_id, str) or not field_id.startswith("customfield_"):
+                continue
+            if isinstance(value, str) and value in allowed_parents:
+                return value
         return parent_key
 
     def _attach_derived_parent_keys(self, issues: list[dict[str, Any]], parent_keys: list[str]) -> list[dict[str, Any]]:

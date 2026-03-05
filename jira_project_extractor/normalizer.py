@@ -91,6 +91,14 @@ class JiraDataNormalizer:
         return None
 
     @staticmethod
+    def _get_field_by_ids(issue: dict[str, Any], field_ids: list[str]) -> str | None:
+        fields = issue.get("fields", {})
+        for field_id in field_ids:
+            if field_id in fields and fields.get(field_id) is not None:
+                return JiraDataNormalizer._stringify_custom_value(fields.get(field_id))
+        return None
+
+    @staticmethod
     def _issue_row(issue: dict[str, Any]) -> dict[str, Any]:
         fields = issue.get("fields", {})
         labels = fields.get("labels", [])
@@ -125,15 +133,15 @@ class JiraDataNormalizer:
             row["level"] = level_name
 
             if level_name == "subtask":
-                row["scope"] = JiraDataNormalizer._get_alias_field(issue, ["Scope"])
-                row["test_criteria"] = JiraDataNormalizer._get_alias_field(
+                row["scope"] = JiraDataNormalizer._get_field_by_ids(issue, ["customfield_12884"]) or JiraDataNormalizer._get_alias_field(issue, ["Scope"])
+                row["test_criteria"] = JiraDataNormalizer._get_field_by_ids(issue, ["customfield_10010"]) or JiraDataNormalizer._get_alias_field(
                     issue,
                     ["Test Criteria", "Acceptance Criteria", "Testing Criteria"],
                 )
-                row["testing_results"] = JiraDataNormalizer._get_alias_field(
+                row["testing_results"] = JiraDataNormalizer._get_field_by_ids(
                     issue,
-                    ["Testing Results", "Test Results"],
-                )
+                    ["customfield_35544", "cutomfield_35544"],
+                ) or JiraDataNormalizer._get_alias_field(issue, ["Testing Results", "Test Results"])
 
             rows.append(row)
 
