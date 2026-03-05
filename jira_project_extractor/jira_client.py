@@ -22,16 +22,41 @@ class JiraApiClient:
                 basic_auth=(self.username, config.password),
                 options={"verify": config.resolved_verify_cert_path()},
             )
+            self.field_catalog = self._load_field_catalog()
+            self.epic_link_field_id = self._find_field_id_by_label("Epic Link")
             logger.info("Initialized JIRA client for user %s", self.username)
         except Exception:
             logger.exception("Failed to initialize JIRA client")
             raise
 
-    @staticmethod
-    def _issue_to_json(issue: Any) -> dict[str, Any]:
+    def _load_field_catalog(self) -> dict[str, str]:
+        try:
+            catalog: dict[str, str] = {}
+            for field in self.client.fields():
+                field_id = field.get("id")
+                field_name = field.get("name")
+                if field_id and field_name:
+                    catalog[str(field_id)] = str(field_name)
+            logger.info("Loaded %s JIRA field definitions", len(catalog))
+            return catalog
+        except Exception:
+            logger.exception("Failed to load JIRA field catalog")
+            return {}
+
+    def _find_field_id_by_label(self, label: str) -> str | None:
+        target = label.strip().lower()
+        for field_id, field_name in self.field_catalog.items():
+            if field_name.strip().lower() == target:
+                return field_id
+        return None
+
+    def _issue_to_json(self, issue: Any) -> dict[str, Any]:
         raw = getattr(issue, "raw", None)
         if isinstance(raw, dict):
-            return raw
+            result = dict(raw)
+            result["__field_catalog"] = self.field_catalog
+            result["__epic_link_field_id"] = self.epic_link_field_id
+            return result
         raise ValueError("Unexpected issue payload returned by JIRA client.")
 
     def search_issues(

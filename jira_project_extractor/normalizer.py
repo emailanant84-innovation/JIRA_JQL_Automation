@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,42 +36,70 @@ class JiraDataNormalizer:
         return field_obj.get("displayName") or field_obj.get("name")
 
     @staticmethod
+    def _normalize_alias(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", value.lower())
+
+    @staticmethod
     def _stringify_custom_value(value: Any) -> str | None:
         if value is None:
             return None
         if isinstance(value, (str, int, float, bool)):
             return str(value)
         if isinstance(value, dict):
-            for k in ["value", "name", "displayName", "text"]:
-                if value.get(k) is not None:
-                    return str(value.get(k))
+            for key in ["value", "name", "displayName", "text"]:
+                if value.get(key) is not None:
+                    return str(value.get(key))
             return str(value)
         if isinstance(value, list):
-            flattened = [JiraDataNormalizer._stringify_custom_value(v) for v in value]
-            return ", ".join([v for v in flattened if v])
+            flattened = [JiraDataNormalizer._stringify_custom_value(item) for item in value]
+            return ", ".join([item for item in flattened if item])
         return str(value)
 
     @staticmethod
-    def _get_named_custom_field(issue: dict[str, Any], aliases: list[str]) -> str | None:
-        fields = issue.get("fields", {})
-        names = issue.get("names", {})
-        alias_set = {name.strip().lower() for name in aliases}
+    def _combined_field_labels(issue: dict[str, Any]) -> dict[str, str]:
+        labels: dict[str, str] = {}
 
-        for field_key, friendly_name in names.items():
-            if not isinstance(friendly_name, str):
-                continue
-            if friendly_name.strip().lower() in alias_set:
-                return JiraDataNormalizer._stringify_custom_value(fields.get(field_key))
+        names = issue.get("names", {})
+        if isinstance(names, dict):
+            for field_id, label in names.items():
+                if isinstance(field_id, str) and isinstance(label, str):
+                    labels[field_id] = label
+
+        catalog = issue.get("__field_catalog", {})
+        if isinstance(catalog, dict):
+            for field_id, label in catalog.items():
+                if isinstance(field_id, str) and isinstance(label, str) and field_id not in labels:
+                    labels[field_id] = label
+
+        return labels
+
+    @staticmethod
+    def _get_alias_field(issue: dict[str, Any], aliases: list[str]) -> str | None:
+        fields = issue.get("fields", {})
+        labels_by_id = JiraDataNormalizer._combined_field_labels(issue)
+        alias_norm = {JiraDataNormalizer._normalize_alias(alias) for alias in aliases}
+
+        for field_id, field_label in labels_by_id.items():
+            if JiraDataNormalizer._normalize_alias(field_label) in alias_norm:
+                return JiraDataNormalizer._stringify_custom_value(fields.get(field_id))
+
+        # Final fallback: if alias directly equals a field key.
+        for alias in aliases:
+            if alias in fields:
+                return JiraDataNormalizer._stringify_custom_value(fields.get(alias))
+
         return None
 
     @staticmethod
     def _issue_row(issue: dict[str, Any]) -> dict[str, Any]:
         fields = issue.get("fields", {})
         labels = fields.get("labels", [])
+        parent_key = ((fields.get("parent") or {}).get("key")) or issue.get("__derived_parent_key")
+
         return {
             "issue_id": issue.get("id"),
             "issue_key": issue.get("key"),
-            "parent_key": ((fields.get("parent") or {}).get("key")),
+            "parent_key": parent_key,
             "project_key": ((fields.get("project") or {}).get("key")),
             "issue_type": ((fields.get("issuetype") or {}).get("name")),
             "summary": fields.get("summary"),
@@ -96,14 +125,14 @@ class JiraDataNormalizer:
             row["level"] = level_name
 
             if level_name == "subtask":
-                row["scope"] = JiraDataNormalizer._get_named_custom_field(issue, ["Scope"])
-                row["test_criteria"] = JiraDataNormalizer._get_named_custom_field(
+                row["scope"] = JiraDataNormalizer._get_alias_field(issue, ["Scope"])
+                row["test_criteria"] = JiraDataNormalizer._get_alias_field(
                     issue,
-                    ["Test Criteria", "Acceptance Criteria"],
+                    ["Test Criteria", "Acceptance Criteria", "__A_____________", "A"],
                 )
-                row["testing_results"] = JiraDataNormalizer._get_named_custom_field(
+                row["testing_results"] = JiraDataNormalizer._get_alias_field(
                     issue,
-                    ["Testing Results", "Test Results"],
+                    ["Testing Results", "Test Results", "__B_______________", "B"],
                 )
 
             rows.append(row)
@@ -139,14 +168,14 @@ class JiraDataNormalizer:
                 fields = issue.get("fields", {})
                 issue_key = issue.get("key")
                 issue_type = (fields.get("issuetype") or {}).get("name")
+                row = JiraDataNormalizer._issue_row(issue)
 
-                issue_rows.append(JiraDataNormalizer._issue_row(issue))
+                issue_rows.append(row)
 
-                parent = fields.get("parent")
-                if parent:
+                if row.get("parent_key"):
                     hierarchy_rows.append(
                         {
-                            "parent_key": parent.get("key"),
+                            "parent_key": row["parent_key"],
                             "child_key": issue_key,
                             "relation": "parent-child",
                             "child_type": issue_type,
