@@ -11,6 +11,14 @@ from .logging_utils import get_logger
 
 logger = get_logger("normalizer")
 
+# Supports bulk-upload style configuration, e.g.
+# "scope": {"existing.custom.field": "12884"}
+SUBTASK_CUSTOM_FIELD_CONFIG: dict[str, dict[str, str]] = {
+    "scope": {"existing.custom.field": "12884"},
+    "test_criteria": {"existing.custom.field": "10010"},
+    "testing_results": {"existing.custom.field": "35544"},
+}
+
 
 @dataclass
 class NormalizedJiraData:
@@ -46,7 +54,7 @@ class JiraDataNormalizer:
         if isinstance(value, (str, int, float, bool)):
             return str(value)
         if isinstance(value, dict):
-            for key in ["value", "name", "displayName", "text"]:
+            for key in ["value", "name", "displayName", "text", "key"]:
                 if value.get(key) is not None:
                     return str(value.get(key))
             return str(value)
@@ -74,29 +82,79 @@ class JiraDataNormalizer:
         return labels
 
     @staticmethod
-    def _get_alias_field(issue: dict[str, Any], aliases: list[str]) -> str | None:
+    def _candidate_field_keys(raw_ids: list[str]) -> list[str]:
+        out: list[str] = []
+        for raw in raw_ids:
+            token = str(raw).strip()
+            if not token:
+                continue
+            if token.startswith("customfield_") or token.startswith("cutomfield_"):
+                out.extend([token, token.replace("cutomfield_", "customfield_")])
+                continue
+            digits = "".join(ch for ch in token if ch.isdigit())
+            if digits:
+                out.extend([digits, f"customfield_{digits}", f"cutomfield_{digits}"])
+            else:
+                out.append(token)
+
+        dedup: list[str] = []
+        seen: set[str] = set()
+        for key in out:
+            if key in seen:
+                continue
+            seen.add(key)
+            dedup.append(key)
+        return dedup
+
+    @staticmethod
+    def _extract_from_field_containers(issue: dict[str, Any], field_key: str) -> Any:
         fields = issue.get("fields", {})
+        if isinstance(fields, dict) and field_key in fields and fields.get(field_key) is not None:
+            return fields.get(field_key)
+
+        rendered = issue.get("renderedFields", {})
+        if isinstance(rendered, dict) and field_key in rendered and rendered.get(field_key) is not None:
+            return rendered.get(field_key)
+
+        return None
+
+    @staticmethod
+    def _get_alias_field(issue: dict[str, Any], aliases: list[str]) -> str | None:
         labels_by_id = JiraDataNormalizer._combined_field_labels(issue)
         alias_norm = {JiraDataNormalizer._normalize_alias(alias) for alias in aliases}
 
         for field_id, field_label in labels_by_id.items():
             if JiraDataNormalizer._normalize_alias(field_label) in alias_norm:
-                return JiraDataNormalizer._stringify_custom_value(fields.get(field_id))
+                value = JiraDataNormalizer._extract_from_field_containers(issue, field_id)
+                if value is not None:
+                    return JiraDataNormalizer._stringify_custom_value(value)
 
-        # Final fallback: if alias directly equals a field key.
-        for alias in aliases:
-            if alias in fields:
-                return JiraDataNormalizer._stringify_custom_value(fields.get(alias))
+        fields = issue.get("fields", {})
+        if isinstance(fields, dict):
+            for alias in aliases:
+                if alias in fields and fields.get(alias) is not None:
+                    return JiraDataNormalizer._stringify_custom_value(fields.get(alias))
 
         return None
 
     @staticmethod
     def _get_field_by_ids(issue: dict[str, Any], field_ids: list[str]) -> str | None:
-        fields = issue.get("fields", {})
-        for field_id in field_ids:
-            if field_id in fields and fields.get(field_id) is not None:
-                return JiraDataNormalizer._stringify_custom_value(fields.get(field_id))
+        for key in JiraDataNormalizer._candidate_field_keys(field_ids):
+            value = JiraDataNormalizer._extract_from_field_containers(issue, key)
+            if value is not None:
+                return JiraDataNormalizer._stringify_custom_value(value)
         return None
+
+    @staticmethod
+    def _mapped_subtask_field(issue: dict[str, Any], logical_name: str, aliases: list[str]) -> str | None:
+        config = SUBTASK_CUSTOM_FIELD_CONFIG.get(logical_name, {})
+        configured_id = config.get("existing.custom.field")
+
+        direct = JiraDataNormalizer._get_field_by_ids(issue, [configured_id] if configured_id else [])
+        if direct:
+            return direct
+
+        return JiraDataNormalizer._get_alias_field(issue, aliases)
 
     @staticmethod
     def _issue_row(issue: dict[str, Any]) -> dict[str, Any]:
@@ -133,15 +191,17 @@ class JiraDataNormalizer:
             row["level"] = level_name
 
             if level_name == "subtask":
-                row["scope"] = JiraDataNormalizer._get_field_by_ids(issue, ["customfield_12884"]) or JiraDataNormalizer._get_alias_field(issue, ["Scope"])
-                row["test_criteria"] = JiraDataNormalizer._get_field_by_ids(issue, ["customfield_10010"]) or JiraDataNormalizer._get_alias_field(
+                row["scope"] = JiraDataNormalizer._mapped_subtask_field(issue, "scope", ["Scope"])
+                row["test_criteria"] = JiraDataNormalizer._mapped_subtask_field(
                     issue,
+                    "test_criteria",
                     ["Test Criteria", "Acceptance Criteria", "Testing Criteria"],
                 )
-                row["testing_results"] = JiraDataNormalizer._get_field_by_ids(
+                row["testing_results"] = JiraDataNormalizer._mapped_subtask_field(
                     issue,
-                    ["customfield_35544", "cutomfield_35544"],
-                ) or JiraDataNormalizer._get_alias_field(issue, ["Testing Results", "Test Results"])
+                    "testing_results",
+                    ["Testing Results", "Test Results"],
+                )
 
             rows.append(row)
 

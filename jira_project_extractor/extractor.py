@@ -85,7 +85,7 @@ class JiraProjectExtractor:
                     self.client.search_issues(
                         jql=jql,
                         fields=CORE_FIELDS,
-                        expand=["names", "schema"],
+                        expand=["names", "schema", "renderedFields"],
                     )
                 )
             return collected
@@ -119,15 +119,15 @@ class JiraProjectExtractor:
             f'((parent in ({keys})) OR ("Epic Link" in ({keys}))) '
             "ORDER BY created ASC, key ASC"
         )
-        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema"])
+        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
 
     def _query_children_parent_only(self, project: str, keys: str) -> list[dict[str, Any]]:
         jql = f'project = "{project}" AND (parent in ({keys})) ORDER BY created ASC, key ASC'
-        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema"])
+        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
 
     def _query_children_epic_field(self, project: str, keys: str, epic_field_id: str) -> list[dict[str, Any]]:
         jql = f'project = "{project}" AND ({epic_field_id} in ({keys})) ORDER BY created ASC, key ASC'
-        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema"])
+        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
 
     @staticmethod
     def _normalized_label(text: str) -> str:
@@ -239,7 +239,7 @@ class JiraProjectExtractor:
             primary_issues = self.client.search_issues(
                 jql=primary_jql,
                 fields=CORE_FIELDS,
-                expand=["names", "schema"],
+                expand=["names", "schema", "renderedFields"],
             )
 
             primary_keys = [issue["key"] for issue in primary_issues]

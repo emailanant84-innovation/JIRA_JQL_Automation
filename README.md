@@ -12,6 +12,10 @@ A modular Python application that:
 - Includes `labels` in primary issue rows and includes `labels`, `scope`, `test_criteria`, and `testing_results` in subtask rows when those fields exist.
 - Resolves custom subtask aliases by JIRA **field label metadata** (catalog + response labels), not only field IDs, to improve coverage for aliased fields such as Scope / A / B-style labels.
 - Explicitly maps subtask fields using your provided IDs where available: Scope=`customfield_12884`, Test Criteria=`customfield_10010`, Testing Results=`customfield_35544` (with typo-safe fallback `cutomfield_35544`).
+- Supports bulk-upload style custom-field mapping semantics internally, equivalent to:
+  - `"scope": {"existing.custom.field": "12884"}`
+  - `"test criteria": {"existing.custom.field": "10010"}`
+  - `"testing results": {"existing.custom.field": "35544"}`
 - Derives `parent_key` for child issues from Epic-link semantics when explicit `parent` is not present, so child rows correctly reference their Epic/Feature parent.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
 - Saves output automatically to `~/Downloads/jira_project_extractor_output`.
