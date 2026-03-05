@@ -126,9 +126,9 @@ class JiraDataNormalizer:
 
             if level_name == "subtask":
                 row["scope"] = JiraDataNormalizer._get_alias_field(issue, ["Scope"])
-                row["testing_criteria"] = JiraDataNormalizer._get_alias_field(
+                row["test_criteria"] = JiraDataNormalizer._get_alias_field(
                     issue,
-                    ["Testing Criteria", "Test Criteria", "Acceptance Criteria"],
+                    ["Test Criteria", "Acceptance Criteria", "Testing Criteria"],
                 )
                 row["testing_results"] = JiraDataNormalizer._get_alias_field(
                     issue,
