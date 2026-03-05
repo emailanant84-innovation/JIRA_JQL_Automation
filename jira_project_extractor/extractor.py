@@ -157,14 +157,19 @@ class JiraProjectExtractor:
         return list(dedup.values())
 
     @staticmethod
-    def _linked_keys(seed_issues: list[dict[str, Any]], exclude: set[str]) -> list[str]:
-        linked: set[str] = set()
-        for issue in seed_issues:
-            for link in issue.get("fields", {}).get("issuelinks", []):
+    def _linked_key_to_subtasks(subtasks: list[dict[str, Any]], exclude: set[str]) -> dict[str, set[str]]:
+        mapping: dict[str, set[str]] = {}
+        for subtask in subtasks:
+            subtask_key = subtask.get("key")
+            if not subtask_key:
+                continue
+            for link in subtask.get("fields", {}).get("issuelinks", []):
                 target = link.get("inwardIssue") or link.get("outwardIssue")
-                if target and target.get("key") and target["key"] not in exclude:
-                    linked.add(target["key"])
-        return sorted(linked)
+                target_key = (target or {}).get("key")
+                if not target_key or target_key in exclude:
+                    continue
+                mapping.setdefault(target_key, set()).add(subtask_key)
+        return mapping
 
     def extract_project_graph(self, project_key: str, query_filters: ProjectQueryFilters) -> ExtractedIssueBundles:
         primary_jql = self.build_primary_jql(project_key, query_filters)
@@ -180,8 +185,13 @@ class JiraProjectExtractor:
         subtask_issues = self._extract_children(project_key, child_keys, SUBTASK_CORE_FIELDS)
 
         in_scope_keys = set(primary_keys) | set(child_keys) | {issue["key"] for issue in subtask_issues}
-        linked_keys = self._linked_keys(subtask_issues, exclude=in_scope_keys)
+        linked_map = self._linked_key_to_subtasks(subtask_issues, exclude=in_scope_keys)
+        linked_keys = sorted(linked_map.keys())
         linked_issues = self._search_by_keys(linked_keys, fields=CORE_FIELDS)
+
+        for issue in linked_issues:
+            subtask_keys = sorted(linked_map.get(issue.get("key"), set()))
+            issue["__linked_subtask_keys"] = ", ".join(subtask_keys)
 
         return ExtractedIssueBundles(
             primary_issues=primary_issues,

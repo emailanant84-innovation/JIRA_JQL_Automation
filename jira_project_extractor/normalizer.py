@@ -16,7 +16,7 @@ class NormalizedJiraData:
     primary_issues: pd.DataFrame
     child_issues: pd.DataFrame
     subtask_issues: pd.DataFrame
-    linked_scope_issues: pd.DataFrame
+    linked_issues: pd.DataFrame
 
 
 class JiraDataNormalizer:
@@ -97,6 +97,9 @@ class JiraDataNormalizer:
                 row["target_completion_date"] = JiraDataNormalizer._custom_field(issue, "customfield_14646")
                 row["desired_start_date"] = JiraDataNormalizer._custom_field(issue, "customfield_14852")
 
+            if level_name == "linked":
+                row["linked_to_subtask_keys"] = issue.get("__linked_subtask_keys")
+
             rows.append(row)
 
         df = pd.DataFrame(rows)
@@ -115,14 +118,14 @@ class JiraDataNormalizer:
                 primary_issues=JiraDataNormalizer._level_df(extracted.primary_issues, "primary"),
                 child_issues=JiraDataNormalizer._level_df(extracted.child_issues, "child"),
                 subtask_issues=JiraDataNormalizer._level_df(extracted.subtask_issues, "subtask"),
-                linked_scope_issues=JiraDataNormalizer._level_df(extracted.linked_issues, "linked"),
+                linked_issues=JiraDataNormalizer._level_df(extracted.linked_issues, "linked"),
             )
             logger.info(
                 "Normalization complete: primary=%s child=%s subtask=%s linked=%s",
                 len(out.primary_issues),
                 len(out.child_issues),
                 len(out.subtask_issues),
-                len(out.linked_scope_issues),
+                len(out.linked_issues),
             )
             return out
         except Exception:

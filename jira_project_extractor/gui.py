@@ -22,7 +22,7 @@ class JiraExtractionGUI:
         "primary_issues",
         "child_issues",
         "subtask_issues",
-        "linked_scope_issues",
+        "linked_issues",
     ]
 
     def __init__(self) -> None:

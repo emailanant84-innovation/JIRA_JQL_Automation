@@ -8,7 +8,8 @@ A modular Python application that:
 - Uses JQL sorting compatible with restricted JIRA instances (avoids `ORDER BY parent`), and then orders child/subtask tables by parent locally.
 - Extracts a **limited hierarchy only**: selected issue type (primary level) → direct child issues (via `parent` and `"Epic Link"`) → child subtasks.
 - Extracts one additional linked-issues list for issues linked to **subtasks only** (from `subtask_issues`), without traversing deeper.
-- Produces ordered level-wise tables only: `primary_issues`, `child_issues`, `subtask_issues`, `linked_scope_issues`.
+- Produces ordered level-wise tables only: `primary_issues`, `child_issues`, `subtask_issues`, `linked_issues`.
+- `linked_issues` includes `linked_to_subtask_keys` showing which subtask issue key(s) each linked issue came from.
 - Includes `labels` in primary issue rows and includes `labels`, `scope`, `test_criteria`, and `testing_results` in subtask rows when those fields exist.
 - Uses a dedicated subtask core-field set that explicitly includes custom fields required in subtask outputs:
   - `customfield_11641` as `type_of_work`
