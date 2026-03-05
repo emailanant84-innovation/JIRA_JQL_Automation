@@ -113,105 +113,64 @@ class JiraProjectExtractor:
             logger.exception("Failed to build primary JQL")
             raise
 
-    def _query_children_parent_or_epic(self, project: str, keys: str) -> list[dict[str, Any]]:
-        jql = (
-            f'project = "{project}" AND '
-            f'((parent in ({keys})) OR ("Epic Link" in ({keys}))) '
-            "ORDER BY created ASC, key ASC"
-        )
+    def _query_children_by_parent_key(self, project: str, parent_key: str) -> list[dict[str, Any]]:
+        jql = f'project = "{project}" AND parent = "{parent_key}" ORDER BY created ASC, key ASC'
         return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
 
-    def _query_children_parent_only(self, project: str, keys: str) -> list[dict[str, Any]]:
-        jql = f'project = "{project}" AND (parent in ({keys})) ORDER BY created ASC, key ASC'
+    def _query_children_by_epic_key(self, project: str, parent_key: str) -> list[dict[str, Any]]:
+        jql = f'project = "{project}" AND "Epic Link" = "{parent_key}" ORDER BY created ASC, key ASC'
         return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
 
-    def _query_children_epic_field(self, project: str, keys: str, epic_field_id: str) -> list[dict[str, Any]]:
-        jql = f'project = "{project}" AND ({epic_field_id} in ({keys})) ORDER BY created ASC, key ASC'
+    def _query_children_by_epic_field_id(self, project: str, parent_key: str, epic_field_id: str) -> list[dict[str, Any]]:
+        jql = f'project = "{project}" AND {epic_field_id} = "{parent_key}" ORDER BY created ASC, key ASC'
         return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
-
-    @staticmethod
-    def _normalized_label(text: str) -> str:
-        return "".join(ch for ch in text.lower() if ch.isalnum())
-
-    @staticmethod
-    def _issue_field_labels(issue: dict[str, Any]) -> dict[str, str]:
-        labels: dict[str, str] = {}
-        names = issue.get("names", {})
-        if isinstance(names, dict):
-            for field_id, label in names.items():
-                if isinstance(field_id, str) and isinstance(label, str):
-                    labels[field_id] = label
-        catalog = issue.get("__field_catalog", {})
-        if isinstance(catalog, dict):
-            for field_id, label in catalog.items():
-                if isinstance(field_id, str) and isinstance(label, str) and field_id not in labels:
-                    labels[field_id] = label
-        return labels
-
-    @staticmethod
-    def _derive_parent_key(issue: dict[str, Any], allowed_parents: set[str]) -> str | None:
-        fields = issue.get("fields", {})
-        parent_key = ((fields.get("parent") or {}).get("key"))
-        if parent_key in allowed_parents:
-            return parent_key
-
-        epic_field_id = issue.get("__epic_link_field_id")
-        if epic_field_id:
-            epic_parent = fields.get(epic_field_id)
-            if isinstance(epic_parent, str) and epic_parent in allowed_parents:
-                return epic_parent
-
-        # Fallback: detect likely Epic/Parent link fields via field label metadata.
-        labels = JiraProjectExtractor._issue_field_labels(issue)
-        link_aliases = {"epiclink", "parentlink", "featurelink"}
-        for field_id, label in labels.items():
-            if JiraProjectExtractor._normalized_label(label) not in link_aliases:
-                continue
-            candidate = fields.get(field_id)
-            if isinstance(candidate, str) and candidate in allowed_parents:
-                return candidate
-
-        # Last fallback: any custom field carrying one of allowed parent keys.
-        for field_id, value in fields.items():
-            if not isinstance(field_id, str) or not field_id.startswith("customfield_"):
-                continue
-            if isinstance(value, str) and value in allowed_parents:
-                return value
-        return parent_key
-
-    def _attach_derived_parent_keys(self, issues: list[dict[str, Any]], parent_keys: list[str]) -> list[dict[str, Any]]:
-        allowed = set(parent_keys)
-        for issue in issues:
-            derived = self._derive_parent_key(issue, allowed)
-            if derived:
-                issue["__derived_parent_key"] = derived
-        return issues
 
     def _extract_children(self, project_key: str, parent_keys: list[str]) -> list[dict[str, Any]]:
-        """Fetch children via both parent and Epic Link semantics."""
+        """Fetch children and preserve explicit parent->child mapping for each source key."""
         try:
             if not parent_keys:
                 return []
-            out: list[dict[str, Any]] = []
-            project = project_key.replace('"', '\\"')
 
-            for block in self._chunk(parent_keys, size=100):
-                keys = self._quote_values(block)
+            project = project_key.replace('"', '\\"')
+            dedup: dict[str, dict[str, Any]] = {}
+            explicit_map: dict[str, str] = {}
+
+            for parent_key in parent_keys:
+                # Path 1: Classic parent-child relationship.
+                parent_children = self._query_children_by_parent_key(project, parent_key)
+                for issue in parent_children:
+                    key = issue["key"]
+                    dedup[key] = issue
+                    explicit_map[key] = parent_key
+
+                # Path 2: Epic-link relationship (Feature/Epic -> Tasks/Stories).
+                epic_children: list[dict[str, Any]] = []
                 try:
-                    out.extend(self._query_children_parent_or_epic(project, keys))
+                    epic_children = self._query_children_by_epic_key(project, parent_key)
                 except Exception:
-                    logger.warning("Combined parent/Epic Link JQL failed; trying fallback queries")
-                    out.extend(self._query_children_parent_only(project, keys))
+                    logger.warning("Epic Link query by label failed for %s; trying field-id fallback", parent_key)
                     if self.client.epic_link_field_id:
                         try:
-                            out.extend(self._query_children_epic_field(project, keys, self.client.epic_link_field_id))
+                            epic_children = self._query_children_by_epic_field_id(
+                                project,
+                                parent_key,
+                                self.client.epic_link_field_id,
+                            )
                         except Exception:
-                            logger.warning("Epic field-id fallback query also failed")
+                            logger.warning("Epic field-id query failed for %s", parent_key)
 
-            # Deduplicate + attach derived parent key for rows linked via Epic Link.
-            by_key = {issue["key"]: issue for issue in out}
-            deduped = list(by_key.values())
-            return self._attach_derived_parent_keys(deduped, parent_keys)
+                for issue in epic_children:
+                    key = issue["key"]
+                    dedup[key] = issue
+                    explicit_map[key] = parent_key
+
+            for issue_key, parent_key in explicit_map.items():
+                issue = dedup.get(issue_key)
+                if not issue:
+                    continue
+                issue["__derived_parent_key"] = parent_key
+
+            return list(dedup.values())
         except Exception:
             logger.exception("Failed extracting children for project=%s", project_key)
             raise

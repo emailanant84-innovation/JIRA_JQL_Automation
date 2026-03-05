@@ -17,6 +17,7 @@ A modular Python application that:
   - `"test criteria": {"existing.custom.field": "10010"}`
   - `"testing results": {"existing.custom.field": "35544"}`
 - Derives `parent_key` for child issues from Epic-link semantics when explicit `parent` is not present, so child rows correctly reference their Epic/Feature parent.
+- Preserves explicit Epic→Task mapping during child expansion (per-Epic queries) and writes that mapped Epic key into `parent_key` for child rows/CSV.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
 - Saves output automatically to `~/Downloads/jira_project_extractor_output`.
 - Logs process events, issue-level failures, and exceptions from modules into `~/Downloads/jira_project_extractor_output/jira_project_extractor.log`.
