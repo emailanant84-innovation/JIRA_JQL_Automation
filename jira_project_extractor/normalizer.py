@@ -17,17 +17,9 @@ class NormalizedJiraData:
     child_issues: pd.DataFrame
     subtask_issues: pd.DataFrame
     linked_scope_issues: pd.DataFrame
-    issues: pd.DataFrame
-    hierarchy: pd.DataFrame
-    links: pd.DataFrame
-    labels: pd.DataFrame
-    components: pd.DataFrame
-    fix_versions: pd.DataFrame
 
 
 class JiraDataNormalizer:
-    """Convert nested JIRA issue JSON into relational/normalized dataframes."""
-
     @staticmethod
     def _name(field_obj: dict[str, Any] | None) -> str | None:
         if not field_obj:
@@ -54,7 +46,6 @@ class JiraDataNormalizer:
     def _custom_field(issue: dict[str, Any], field_id: str) -> str | None:
         fields = issue.get("fields", {})
         rendered = issue.get("renderedFields", {})
-
         if isinstance(fields, dict) and fields.get(field_id) is not None:
             return JiraDataNormalizer._stringify_custom_value(fields.get(field_id))
         if isinstance(rendered, dict) and rendered.get(field_id) is not None:
@@ -115,113 +106,16 @@ class JiraDataNormalizer:
         if level_name == "primary":
             return df.sort_values(by=["created", "issue_key"], kind="stable", na_position="last").reset_index(drop=True)
 
-        return (
-            df.sort_values(
-                by=["parent_key", "created", "issue_key"],
-                kind="stable",
-                na_position="last",
-            )
-            .reset_index(drop=True)
-        )
+        return df.sort_values(by=["parent_key", "created", "issue_key"], kind="stable", na_position="last").reset_index(drop=True)
 
     @staticmethod
     def normalize(extracted: ExtractedIssueBundles) -> NormalizedJiraData:
         try:
-            all_issues = extracted.all_issues()
-            issue_rows: list[dict[str, Any]] = []
-            hierarchy_rows: list[dict[str, Any]] = []
-            link_rows: list[dict[str, Any]] = []
-            label_rows: list[dict[str, Any]] = []
-            component_rows: list[dict[str, Any]] = []
-            version_rows: list[dict[str, Any]] = []
-
-            for issue in all_issues:
-                fields = issue.get("fields", {})
-                issue_key = issue.get("key")
-                issue_type = (fields.get("issuetype") or {}).get("name")
-                row = JiraDataNormalizer._issue_row(issue)
-
-                issue_rows.append(row)
-
-                if row.get("parent_key"):
-                    hierarchy_rows.append(
-                        {
-                            "parent_key": row["parent_key"],
-                            "child_key": issue_key,
-                            "relation": "parent-child",
-                            "child_type": issue_type,
-                        }
-                    )
-
-                for subtask in fields.get("subtasks", []):
-                    hierarchy_rows.append(
-                        {
-                            "parent_key": issue_key,
-                            "child_key": subtask.get("key"),
-                            "relation": "parent-subtask",
-                            "child_type": ((subtask.get("fields", {}).get("issuetype") or {}).get("name")),
-                        }
-                    )
-
-                for link in fields.get("issuelinks", []):
-                    link_type = link.get("type", {})
-                    inward_issue = link.get("inwardIssue")
-                    outward_issue = link.get("outwardIssue")
-
-                    if inward_issue:
-                        link_rows.append(
-                            {
-                                "from_issue": inward_issue.get("key"),
-                                "to_issue": issue_key,
-                                "direction": "inward",
-                                "link_name": link_type.get("name"),
-                                "relation_label": link_type.get("inward"),
-                            }
-                        )
-                    if outward_issue:
-                        link_rows.append(
-                            {
-                                "from_issue": issue_key,
-                                "to_issue": outward_issue.get("key"),
-                                "direction": "outward",
-                                "link_name": link_type.get("name"),
-                                "relation_label": link_type.get("outward"),
-                            }
-                        )
-
-                for label in fields.get("labels", []):
-                    label_rows.append({"issue_key": issue_key, "label": label})
-
-                for component in fields.get("components", []):
-                    component_rows.append(
-                        {
-                            "issue_key": issue_key,
-                            "component_id": component.get("id"),
-                            "component_name": component.get("name"),
-                        }
-                    )
-
-                for version in fields.get("fixVersions", []):
-                    version_rows.append(
-                        {
-                            "issue_key": issue_key,
-                            "version_id": version.get("id"),
-                            "version_name": version.get("name"),
-                            "is_released": version.get("released"),
-                        }
-                    )
-
             out = NormalizedJiraData(
                 primary_issues=JiraDataNormalizer._level_df(extracted.primary_issues, "primary"),
                 child_issues=JiraDataNormalizer._level_df(extracted.child_issues, "child"),
                 subtask_issues=JiraDataNormalizer._level_df(extracted.subtask_issues, "subtask"),
                 linked_scope_issues=JiraDataNormalizer._level_df(extracted.linked_issues, "linked"),
-                issues=pd.DataFrame(issue_rows),
-                hierarchy=pd.DataFrame(hierarchy_rows),
-                links=pd.DataFrame(link_rows),
-                labels=pd.DataFrame(label_rows),
-                components=pd.DataFrame(component_rows),
-                fix_versions=pd.DataFrame(version_rows),
             )
             logger.info(
                 "Normalization complete: primary=%s child=%s subtask=%s linked=%s",

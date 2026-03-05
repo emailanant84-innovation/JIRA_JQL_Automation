@@ -7,10 +7,9 @@ A modular Python application that:
 - Applies mandatory JQL filters first to reduce extraction load: `project`, `issuetype`, `created between <start/end>`, and `resolutiondate between <start/end>`. Components filter is optional.
 - Uses JQL sorting compatible with restricted JIRA instances (avoids `ORDER BY parent`), and then orders child/subtask tables by parent locally.
 - Extracts a **limited hierarchy only**: selected issue type (primary level) → direct child issues (via `parent` and `"Epic Link"`) → child subtasks.
-- Extracts one additional linked-issues list for issues linked to any of the in-scope primary/child/subtask issues, without traversing deeper.
-- Produces ordered level-wise tables (`primary_issues`, `child_issues`, `subtask_issues`, `linked_scope_issues`) plus normalized relational tables.
+- Extracts one additional linked-issues list for issues linked to **subtasks only** (from `subtask_issues`), without traversing deeper.
+- Produces ordered level-wise tables only: `primary_issues`, `child_issues`, `subtask_issues`, `linked_scope_issues`.
 - Includes `labels` in primary issue rows and includes `labels`, `scope`, `test_criteria`, and `testing_results` in subtask rows when those fields exist.
-- Resolves custom subtask aliases by JIRA **field label metadata** (catalog + response labels), not only field IDs, to improve coverage for aliased fields such as Scope / A / B-style labels.
 - Uses a dedicated subtask core-field set that explicitly includes custom fields required in subtask outputs:
   - `customfield_11641` as `type_of_work`
   - `customfield_12884` as `scope`
@@ -20,7 +19,6 @@ A modular Python application that:
   - `customfield_12947` as `tester`
   - `customfield_14646` as `target_completion_date`
   - `customfield_14852` as `desired_start_date`
-- Derives `parent_key` for child issues from Epic-link semantics when explicit `parent` is not present, so child rows correctly reference their Epic/Feature parent.
 - Preserves explicit Epic→Task mapping during child expansion (per-Epic queries) and writes that mapped Epic key into `parent_key` for child rows/CSV.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
 - Saves output automatically to `~/Downloads/jira_project_extractor_output`.
@@ -33,7 +31,7 @@ A modular Python application that:
 - `jira_project_extractor/logging_utils.py`: centralized logger setup and file handler.
 - `jira_project_extractor/jira_client.py`: JIRA Python SDK client and pagination.
 - `jira_project_extractor/extractor.py`: scoped JQL builder + primary/child/subtask/linked extraction strategy.
-- `jira_project_extractor/normalizer.py`: nested JSON → level-wise and normalized DataFrames.
+- `jira_project_extractor/normalizer.py`: nested JSON → level-wise DataFrames.
 - `jira_project_extractor/cleaner.py`: text cleaning and deduplication.
 - `jira_project_extractor/orchestrator.py`: end-to-end pipeline orchestration + CSV persistence.
 - `jira_project_extractor/gui.py`: GUI orchestration and table filtering.
@@ -56,8 +54,8 @@ python main.py
 - Components (comma-separated, optional)
 - Creation Date Start (YYYY-MM-DD)
 - Creation Date End (YYYY-MM-DD)
-- Resolution Date Start (YYYY-MM-DD)
-- Resolution Date End (YYYY-MM-DD)
+- Resolution Date Start (YYYY-MM-DD, optional)
+- Resolution Date End (YYYY-MM-DD, optional)
 
 ## Table Filter
 

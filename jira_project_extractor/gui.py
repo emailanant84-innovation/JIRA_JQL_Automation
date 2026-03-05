@@ -23,12 +23,6 @@ class JiraExtractionGUI:
         "child_issues",
         "subtask_issues",
         "linked_scope_issues",
-        "issues",
-        "hierarchy",
-        "links",
-        "labels",
-        "components",
-        "fix_versions",
     ]
 
     def __init__(self) -> None:
@@ -79,27 +73,25 @@ class JiraExtractionGUI:
             self.creation_end_entry = ttk.Entry(form, width=70)
             self.creation_end_entry.grid(row=6, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Resolution Date Start (YYYY-MM-DD, mandatory)").grid(row=7, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Resolution Date Start (YYYY-MM-DD, optional)").grid(row=7, column=0, sticky="w", pady=3)
             self.resolution_start_entry = ttk.Entry(form, width=70)
             self.resolution_start_entry.grid(row=7, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Resolution Date End (YYYY-MM-DD, mandatory)").grid(row=8, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Resolution Date End (YYYY-MM-DD, optional)").grid(row=8, column=0, sticky="w", pady=3)
             self.resolution_end_entry = ttk.Entry(form, width=70)
             self.resolution_end_entry.grid(row=8, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Issue Key Filter (comma-separated)").grid(row=9, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Issue Key Filter (comma-separated, optional)").grid(row=9, column=0, sticky="w", pady=3)
             self.issue_key_filter_entry = ttk.Entry(form, width=70)
             self.issue_key_filter_entry.grid(row=9, column=1, sticky="ew", pady=3)
+            self.issue_key_filter_entry.bind("<KeyRelease>", lambda _: self.apply_filter())
 
             form.columnconfigure(1, weight=1)
-            ttk.Button(form, text="Run Extraction", command=self.run_extraction).grid(
-                row=1, column=2, padx=8, rowspan=2, sticky="ns"
+            ttk.Button(form, text="Run Extraction", command=self.run_extraction, width=22).grid(
+                row=1, column=2, padx=8, sticky="ew"
             )
-            ttk.Button(form, text="Apply Issue Key Filter", command=self.apply_filter).grid(
-                row=4, column=2, padx=8, sticky="ew"
-            )
-            ttk.Button(form, text="Reset Filter", command=self.reset_filter).grid(
-                row=5, column=2, padx=8, sticky="ew"
+            ttk.Button(form, text="Reset Filter", command=self.reset_filter, width=22).grid(
+                row=2, column=2, padx=8, sticky="ew"
             )
         except Exception:
             logger.exception("Failed to build GUI form")
@@ -107,33 +99,25 @@ class JiraExtractionGUI:
 
     @staticmethod
     def _parse_csv_values(raw: str) -> list[str]:
-        try:
-            return [part.strip() for part in raw.split(",") if part.strip()]
-        except Exception:
-            logger.exception("Failed to parse comma-separated values")
-            raise
+        return [part.strip() for part in raw.split(",") if part.strip()]
 
     def _build_tabs(self) -> None:
-        try:
-            self.notebook = ttk.Notebook(self.root)
-            self.notebook.pack(fill="both", expand=True, padx=8, pady=8)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=8, pady=8)
 
-            for name in self.TABLES:
-                frame = ttk.Frame(self.notebook)
-                self.notebook.add(frame, text=name)
+        for name in self.TABLES:
+            frame = ttk.Frame(self.notebook)
+            self.notebook.add(frame, text=name)
 
-                tree = ttk.Treeview(frame, show="headings")
-                scroll_y = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-                scroll_x = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
-                tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+            tree = ttk.Treeview(frame, show="headings")
+            scroll_y = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+            scroll_x = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+            tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
 
-                tree.pack(side="left", fill="both", expand=True)
-                scroll_y.pack(side="right", fill="y")
-                scroll_x.pack(side="bottom", fill="x")
-                self.table_views[name] = tree
-        except Exception:
-            logger.exception("Failed to build tabs")
-            raise
+            tree.pack(side="left", fill="both", expand=True)
+            scroll_y.pack(side="right", fill="y")
+            scroll_x.pack(side="bottom", fill="x")
+            self.table_views[name] = tree
 
     def run_extraction(self) -> None:
         try:
@@ -146,18 +130,8 @@ class JiraExtractionGUI:
             resolution_start_date = self.resolution_start_entry.get().strip()
             resolution_end_date = self.resolution_end_entry.get().strip()
 
-            if (
-                not project_key
-                or not password
-                or not issue_type
-                or not creation_start_date
-                or not creation_end_date
-                or not resolution_start_date
-                or not resolution_end_date
-            ):
-                raise ValueError(
-                    "Project key, password, issue type, creation start/end, and resolution start/end dates are mandatory."
-                )
+            if not project_key or not password or not issue_type or not creation_start_date or not creation_end_date:
+                raise ValueError("Project key, password, issue type, and creation start/end dates are mandatory.")
 
             cfg = JiraConfig(password=password)
             query_filters = ProjectQueryFilters(
@@ -175,79 +149,70 @@ class JiraExtractionGUI:
             out_dir = cfg.downloads_output_dir()
             orchestrator.save_to_csv(self.results, out_dir)
             self.base_tables = asdict(self.results)
-            self._render_all(self.base_tables)
-            logger.info("Extraction succeeded for project %s", project_key)
+            self.apply_filter()
             messagebox.showinfo("Success", f"Extraction complete. Files written to {out_dir}")
-        except Exception as exc:  # pragma: no cover - ui feedback path
+        except Exception as exc:  # pragma: no cover
             logger.exception("Extraction failed")
             messagebox.showerror("Extraction Error", str(exc))
 
     def _render_all(self, tables: dict[str, pd.DataFrame]) -> None:
-        try:
-            for name, df in tables.items():
-                self._render_df(self.table_views[name], df)
-        except Exception:
-            logger.exception("Failed to render tables")
-            raise
+        for name, df in tables.items():
+            self._render_df(self.table_views[name], df)
 
     @staticmethod
     def _render_df(tree: ttk.Treeview, df: pd.DataFrame) -> None:
         tree.delete(*tree.get_children())
-
         columns = list(df.columns)
         tree["columns"] = columns
         for col in columns:
             tree.heading(col, text=col)
             tree.column(col, width=170, anchor="w")
-
         for _, row in df.fillna("").iterrows():
             tree.insert("", "end", values=list(row.values))
 
     def apply_filter(self) -> None:
-        try:
-            if not self.base_tables:
-                return
+        if not self.base_tables:
+            return
 
-            raw_filter = self.issue_key_filter_entry.get().strip()
-            issue_keys = {value.upper() for value in self._parse_csv_values(raw_filter)}
-            if not issue_keys:
-                self._render_all(self.base_tables)
-                return
+        raw_filter = self.issue_key_filter_entry.get().strip()
+        issue_keys = {value.upper() for value in self._parse_csv_values(raw_filter)}
+        if not issue_keys:
+            self._render_all(self.base_tables)
+            return
 
-            filtered: dict[str, pd.DataFrame] = {}
-            for name, df in self.base_tables.items():
-                if df.empty:
-                    filtered[name] = df
-                    continue
+        filtered: dict[str, pd.DataFrame] = {}
+        for name, df in self.base_tables.items():
+            if df.empty:
+                filtered[name] = df
+                continue
+            key_columns = [col for col in df.columns if "key" in col.lower()]
+            if not key_columns:
+                filtered[name] = df
+                continue
+            mask = pd.Series(False, index=df.index)
+            for col in key_columns:
+                mask = mask | df[col].astype(str).str.upper().isin(issue_keys)
+            filtered[name] = df[mask]
 
-                key_columns = [col for col in df.columns if "key" in col.lower()]
-                if not key_columns:
-                    filtered[name] = df
-                    continue
-
-                mask = pd.Series(False, index=df.index)
-                for col in key_columns:
-                    mask = mask | df[col].astype(str).str.upper().isin(issue_keys)
-                filtered[name] = df[mask]
-
-            self._render_all(filtered)
-        except Exception as exc:  # pragma: no cover - ui feedback path
-            logger.exception("Failed to apply issue-key filter")
-            messagebox.showerror("Filter Error", str(exc))
+        self._render_all(filtered)
 
     def reset_filter(self) -> None:
-        try:
-            self.issue_key_filter_entry.delete(0, tk.END)
-            if self.base_tables:
-                self._render_all(self.base_tables)
-        except Exception as exc:  # pragma: no cover - ui feedback path
-            logger.exception("Failed to reset filter")
-            messagebox.showerror("Reset Error", str(exc))
+        for entry in [
+            self.project_key_entry,
+            self.password_entry,
+            self.issue_type_entry,
+            self.components_entry,
+            self.creation_start_entry,
+            self.creation_end_entry,
+            self.resolution_start_entry,
+            self.resolution_end_entry,
+            self.issue_key_filter_entry,
+        ]:
+            entry.delete(0, tk.END)
+
+        self.base_tables = {}
+        for name in self.TABLES:
+            self._render_df(self.table_views[name], pd.DataFrame())
 
     def run(self) -> None:
-        try:
-            logger.info("Launching GUI main loop")
-            self.root.mainloop()
-        except Exception:
-            logger.exception("Unhandled GUI runtime exception")
-            raise
+        self.root.mainloop()
