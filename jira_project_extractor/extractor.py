@@ -29,8 +29,16 @@ CORE_FIELDS = [
     "subtasks",
     "fixVersions",
     "components",
-    "customfield_*",
 ]
+
+# Dedicated subtask field set: base core fields + required custom fields.
+SUBTASK_EXTRA_FIELDS = [
+    "customfield_11641",  # type of work
+    "customfield_12884",  # scope
+    "customfield_10010",  # test criteria
+    "customfield_35544",  # testing results
+]
+SUBTASK_CORE_FIELDS = [*CORE_FIELDS, *SUBTASK_EXTRA_FIELDS]
 
 
 @dataclass(slots=True)
@@ -72,7 +80,7 @@ class JiraProjectExtractor:
     def _chunk(values: list[str], size: int = 100) -> list[list[str]]:
         return [values[index : index + size] for index in range(0, len(values), size)]
 
-    def _search_by_keys(self, issue_keys: list[str]) -> list[dict[str, Any]]:
+    def _search_by_keys(self, issue_keys: list[str], fields: list[str] | None = None) -> list[dict[str, Any]]:
         try:
             if not issue_keys:
                 return []
@@ -84,7 +92,7 @@ class JiraProjectExtractor:
                 collected.extend(
                     self.client.search_issues(
                         jql=jql,
-                        fields=CORE_FIELDS,
+                        fields=fields or CORE_FIELDS,
                         expand=["names", "schema", "renderedFields"],
                     )
                 )
@@ -113,19 +121,19 @@ class JiraProjectExtractor:
             logger.exception("Failed to build primary JQL")
             raise
 
-    def _query_children_by_parent_key(self, project: str, parent_key: str) -> list[dict[str, Any]]:
+    def _query_children_by_parent_key(self, project: str, parent_key: str, fields: list[str]) -> list[dict[str, Any]]:
         jql = f'project = "{project}" AND parent = "{parent_key}" ORDER BY created ASC, key ASC'
-        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
+        return self.client.search_issues(jql=jql, fields=fields, expand=["names", "schema", "renderedFields"])
 
-    def _query_children_by_epic_key(self, project: str, parent_key: str) -> list[dict[str, Any]]:
+    def _query_children_by_epic_key(self, project: str, parent_key: str, fields: list[str]) -> list[dict[str, Any]]:
         jql = f'project = "{project}" AND "Epic Link" = "{parent_key}" ORDER BY created ASC, key ASC'
-        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
+        return self.client.search_issues(jql=jql, fields=fields, expand=["names", "schema", "renderedFields"])
 
-    def _query_children_by_epic_field_id(self, project: str, parent_key: str, epic_field_id: str) -> list[dict[str, Any]]:
+    def _query_children_by_epic_field_id(self, project: str, parent_key: str, epic_field_id: str, fields: list[str]) -> list[dict[str, Any]]:
         jql = f'project = "{project}" AND {epic_field_id} = "{parent_key}" ORDER BY created ASC, key ASC'
-        return self.client.search_issues(jql=jql, fields=CORE_FIELDS, expand=["names", "schema", "renderedFields"])
+        return self.client.search_issues(jql=jql, fields=fields, expand=["names", "schema", "renderedFields"])
 
-    def _extract_children(self, project_key: str, parent_keys: list[str]) -> list[dict[str, Any]]:
+    def _extract_children(self, project_key: str, parent_keys: list[str], fields: list[str]) -> list[dict[str, Any]]:
         """Fetch children and preserve explicit parent->child mapping for each source key."""
         try:
             if not parent_keys:
@@ -136,17 +144,15 @@ class JiraProjectExtractor:
             explicit_map: dict[str, str] = {}
 
             for parent_key in parent_keys:
-                # Path 1: Classic parent-child relationship.
-                parent_children = self._query_children_by_parent_key(project, parent_key)
+                parent_children = self._query_children_by_parent_key(project, parent_key, fields)
                 for issue in parent_children:
                     key = issue["key"]
                     dedup[key] = issue
                     explicit_map[key] = parent_key
 
-                # Path 2: Epic-link relationship (Feature/Epic -> Tasks/Stories).
                 epic_children: list[dict[str, Any]] = []
                 try:
-                    epic_children = self._query_children_by_epic_key(project, parent_key)
+                    epic_children = self._query_children_by_epic_key(project, parent_key, fields)
                 except Exception:
                     logger.warning("Epic Link query by label failed for %s; trying field-id fallback", parent_key)
                     if self.client.epic_link_field_id:
@@ -155,6 +161,7 @@ class JiraProjectExtractor:
                                 project,
                                 parent_key,
                                 self.client.epic_link_field_id,
+                                fields,
                             )
                         except Exception:
                             logger.warning("Epic field-id query failed for %s", parent_key)
@@ -202,14 +209,14 @@ class JiraProjectExtractor:
             )
 
             primary_keys = [issue["key"] for issue in primary_issues]
-            child_issues = self._extract_children(project_key, primary_keys)
+            child_issues = self._extract_children(project_key, primary_keys, CORE_FIELDS)
             child_keys = [issue["key"] for issue in child_issues]
-            subtask_issues = self._extract_children(project_key, child_keys)
+            subtask_issues = self._extract_children(project_key, child_keys, SUBTASK_CORE_FIELDS)
 
             in_scope_keys = set(primary_keys) | set(child_keys) | {issue["key"] for issue in subtask_issues}
             anchor = [*primary_issues, *child_issues, *subtask_issues]
             linked_keys = self._linked_keys(anchor, exclude=in_scope_keys)
-            linked_issues = self._search_by_keys(linked_keys)
+            linked_issues = self._search_by_keys(linked_keys, fields=CORE_FIELDS)
 
             logger.info(
                 "Extraction complete: primary=%s child=%s subtask=%s linked=%s",

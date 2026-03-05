@@ -11,11 +11,11 @@ A modular Python application that:
 - Produces ordered level-wise tables (`primary_issues`, `child_issues`, `subtask_issues`, `linked_scope_issues`) plus normalized relational tables.
 - Includes `labels` in primary issue rows and includes `labels`, `scope`, `test_criteria`, and `testing_results` in subtask rows when those fields exist.
 - Resolves custom subtask aliases by JIRA **field label metadata** (catalog + response labels), not only field IDs, to improve coverage for aliased fields such as Scope / A / B-style labels.
-- Explicitly maps subtask fields using your provided IDs where available: Scope=`customfield_12884`, Test Criteria=`customfield_10010`, Testing Results=`customfield_35544` (with typo-safe fallback `cutomfield_35544`).
-- Supports bulk-upload style custom-field mapping semantics internally, equivalent to:
-  - `"scope": {"existing.custom.field": "12884"}`
-  - `"test criteria": {"existing.custom.field": "10010"}`
-  - `"testing results": {"existing.custom.field": "35544"}`
+- Uses a dedicated subtask core-field set that explicitly includes custom fields required in subtask outputs:
+  - `customfield_11641` as `type_of_work`
+  - `customfield_12884` as `scope`
+  - `customfield_10010` as `test_criteria`
+  - `customfield_35544` as `testing_results`
 - Derives `parent_key` for child issues from Epic-link semantics when explicit `parent` is not present, so child rows correctly reference their Epic/Feature parent.
 - Preserves explicit Epic→Task mapping during child expansion (per-Epic queries) and writes that mapped Epic key into `parent_key` for child rows/CSV.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
