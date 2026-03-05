@@ -29,6 +29,9 @@ CORE_FIELDS = [
     "subtasks",
     "fixVersions",
     "components",
+    "customfield_12947",  # tester
+    "customfield_14646",  # target completion date
+    "customfield_14852",  # desired start date
 ]
 
 # Dedicated subtask field set: base core fields + required custom fields.
@@ -44,8 +47,10 @@ SUBTASK_CORE_FIELDS = [*CORE_FIELDS, *SUBTASK_EXTRA_FIELDS]
 @dataclass(slots=True)
 class ProjectQueryFilters:
     components: list[str]
-    created_on_or_after: str
-    desired_start_on_or_after: str
+    created_start_date: str
+    created_end_date: str
+    resolution_start_date: str
+    resolution_end_date: str
     issue_type: str
 
 
@@ -67,9 +72,8 @@ class ExtractedIssueBundles:
 class JiraProjectExtractor:
     """Extract scope-limited issues: primary type -> children -> subtasks -> linked only."""
 
-    def __init__(self, client: JiraApiClient, desired_start_field: str = '"Start date"') -> None:
+    def __init__(self, client: JiraApiClient) -> None:
         self.client = client
-        self.desired_start_field = desired_start_field
 
     @staticmethod
     def _quote_values(values: list[str]) -> str:
@@ -104,15 +108,21 @@ class JiraProjectExtractor:
     def build_primary_jql(self, project_key: str, query_filters: ProjectQueryFilters) -> str:
         try:
             project = project_key.replace('"', '\\"')
-            component_list = self._quote_values(query_filters.components)
             issue_type = query_filters.issue_type.replace('"', '\\"')
+
+            component_clause = ""
+            if query_filters.components:
+                component_list = self._quote_values(query_filters.components)
+                component_clause = f"AND component in ({component_list}) "
 
             jql = (
                 f'project = "{project}" '
                 f'AND issuetype = "{issue_type}" '
-                f'AND component in ({component_list}) '
-                f'AND created >= "{query_filters.created_on_or_after}" '
-                f'AND {self.desired_start_field} >= "{query_filters.desired_start_on_or_after}" '
+                f"{component_clause}"
+                f'AND created >= "{query_filters.created_start_date}" '
+                f'AND created <= "{query_filters.created_end_date}" '
+                f'AND resolutiondate >= "{query_filters.resolution_start_date}" '
+                f'AND resolutiondate <= "{query_filters.resolution_end_date}" '
                 "ORDER BY created ASC"
             )
             logger.info("Built primary JQL for project=%s issue_type=%s", project_key, query_filters.issue_type)

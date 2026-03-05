@@ -101,6 +101,11 @@ class JiraDataNormalizer:
                 row["test_criteria"] = JiraDataNormalizer._custom_field(issue, "customfield_10010")
                 row["testing_results"] = JiraDataNormalizer._custom_field(issue, "customfield_35544")
 
+            if level_name == "primary":
+                row["tester"] = JiraDataNormalizer._custom_field(issue, "customfield_12947")
+                row["target_completion_date"] = JiraDataNormalizer._custom_field(issue, "customfield_14646")
+                row["desired_start_date"] = JiraDataNormalizer._custom_field(issue, "customfield_14852")
+
             rows.append(row)
 
         df = pd.DataFrame(rows)

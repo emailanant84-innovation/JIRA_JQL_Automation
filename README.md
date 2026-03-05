@@ -4,7 +4,7 @@ A modular Python application that:
 - Uses JIRA username/password login via the local OS username (from `USERNAME` / `USER`) and password entered in the GUI.
 - Connects to a fixed JIRA URL: `https://wim-jira.wellsfargo.com`.
 - Uses TLS verification certificate path: `~/Downloads/WellsFargoVerification.cer`.
-- Applies mandatory JQL filters first to reduce extraction load: `project`, `issuetype`, `components`, `created >=`, and `"Start date" >=`.
+- Applies mandatory JQL filters first to reduce extraction load: `project`, `issuetype`, `created between <start/end>`, and `resolutiondate between <start/end>`. Components filter is optional.
 - Uses JQL sorting compatible with restricted JIRA instances (avoids `ORDER BY parent`), and then orders child/subtask tables by parent locally.
 - Extracts a **limited hierarchy only**: selected issue type (primary level) → direct child issues (via `parent` and `"Epic Link"`) → child subtasks.
 - Extracts one additional linked-issues list for issues linked to any of the in-scope primary/child/subtask issues, without traversing deeper.
@@ -16,6 +16,10 @@ A modular Python application that:
   - `customfield_12884` as `scope`
   - `customfield_10010` as `test_criteria`
   - `customfield_35544` as `testing_results`
+- Adds primary-issue custom fields to primary table/CSV:
+  - `customfield_12947` as `tester`
+  - `customfield_14646` as `target_completion_date`
+  - `customfield_14852` as `desired_start_date`
 - Derives `parent_key` for child issues from Epic-link semantics when explicit `parent` is not present, so child rows correctly reference their Epic/Feature parent.
 - Preserves explicit Epic→Task mapping during child expansion (per-Epic queries) and writes that mapped Epic key into `parent_key` for child rows/CSV.
 - Cleans text noise (line/page breaks, excessive whitespace), deduplicates rows, and exports CSV tables.
@@ -49,9 +53,11 @@ python main.py
 - Project Key
 - JIRA Password
 - Issue Type (for example: `Epic`, `Feature`, `Task`)
-- Components (comma-separated)
-- Creation Date (YYYY-MM-DD)
-- Desired Start Date (YYYY-MM-DD)
+- Components (comma-separated, optional)
+- Creation Date Start (YYYY-MM-DD)
+- Creation Date End (YYYY-MM-DD)
+- Resolution Date Start (YYYY-MM-DD)
+- Resolution Date End (YYYY-MM-DD)
 
 ## Table Filter
 

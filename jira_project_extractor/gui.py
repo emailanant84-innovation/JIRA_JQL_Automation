@@ -67,21 +67,29 @@ class JiraExtractionGUI:
             self.issue_type_entry = ttk.Entry(form, width=70)
             self.issue_type_entry.grid(row=3, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Components (comma-separated, mandatory)").grid(row=4, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Components (comma-separated, optional)").grid(row=4, column=0, sticky="w", pady=3)
             self.components_entry = ttk.Entry(form, width=70)
             self.components_entry.grid(row=4, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Creation Date >= (YYYY-MM-DD, mandatory)").grid(row=5, column=0, sticky="w", pady=3)
-            self.creation_date_entry = ttk.Entry(form, width=70)
-            self.creation_date_entry.grid(row=5, column=1, sticky="ew", pady=3)
+            ttk.Label(form, text="Creation Date Start (YYYY-MM-DD, mandatory)").grid(row=5, column=0, sticky="w", pady=3)
+            self.creation_start_entry = ttk.Entry(form, width=70)
+            self.creation_start_entry.grid(row=5, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Desired Start Date >= (YYYY-MM-DD, mandatory)").grid(row=6, column=0, sticky="w", pady=3)
-            self.desired_start_entry = ttk.Entry(form, width=70)
-            self.desired_start_entry.grid(row=6, column=1, sticky="ew", pady=3)
+            ttk.Label(form, text="Creation Date End (YYYY-MM-DD, mandatory)").grid(row=6, column=0, sticky="w", pady=3)
+            self.creation_end_entry = ttk.Entry(form, width=70)
+            self.creation_end_entry.grid(row=6, column=1, sticky="ew", pady=3)
 
-            ttk.Label(form, text="Issue Key Filter (comma-separated)").grid(row=7, column=0, sticky="w", pady=3)
+            ttk.Label(form, text="Resolution Date Start (YYYY-MM-DD, mandatory)").grid(row=7, column=0, sticky="w", pady=3)
+            self.resolution_start_entry = ttk.Entry(form, width=70)
+            self.resolution_start_entry.grid(row=7, column=1, sticky="ew", pady=3)
+
+            ttk.Label(form, text="Resolution Date End (YYYY-MM-DD, mandatory)").grid(row=8, column=0, sticky="w", pady=3)
+            self.resolution_end_entry = ttk.Entry(form, width=70)
+            self.resolution_end_entry.grid(row=8, column=1, sticky="ew", pady=3)
+
+            ttk.Label(form, text="Issue Key Filter (comma-separated)").grid(row=9, column=0, sticky="w", pady=3)
             self.issue_key_filter_entry = ttk.Entry(form, width=70)
-            self.issue_key_filter_entry.grid(row=7, column=1, sticky="ew", pady=3)
+            self.issue_key_filter_entry.grid(row=9, column=1, sticky="ew", pady=3)
 
             form.columnconfigure(1, weight=1)
             ttk.Button(form, text="Run Extraction", command=self.run_extraction).grid(
@@ -133,19 +141,31 @@ class JiraExtractionGUI:
             password = self.password_entry.get().strip()
             issue_type = self.issue_type_entry.get().strip()
             components = self._parse_csv_values(self.components_entry.get().strip())
-            creation_date = self.creation_date_entry.get().strip()
-            desired_start_date = self.desired_start_entry.get().strip()
+            creation_start_date = self.creation_start_entry.get().strip()
+            creation_end_date = self.creation_end_entry.get().strip()
+            resolution_start_date = self.resolution_start_entry.get().strip()
+            resolution_end_date = self.resolution_end_entry.get().strip()
 
-            if not project_key or not password or not issue_type or not components or not creation_date or not desired_start_date:
+            if (
+                not project_key
+                or not password
+                or not issue_type
+                or not creation_start_date
+                or not creation_end_date
+                or not resolution_start_date
+                or not resolution_end_date
+            ):
                 raise ValueError(
-                    "Project key, password, issue type, components, creation date, and desired start date are mandatory."
+                    "Project key, password, issue type, creation start/end, and resolution start/end dates are mandatory."
                 )
 
             cfg = JiraConfig(password=password)
             query_filters = ProjectQueryFilters(
                 components=components,
-                created_on_or_after=creation_date,
-                desired_start_on_or_after=desired_start_date,
+                created_start_date=creation_start_date,
+                created_end_date=creation_end_date,
+                resolution_start_date=resolution_start_date,
+                resolution_end_date=resolution_end_date,
                 issue_type=issue_type,
             )
 
