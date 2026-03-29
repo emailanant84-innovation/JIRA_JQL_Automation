@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from jira import JIRA
@@ -89,6 +90,26 @@ class JiraApiClient:
             return collected
         except Exception:
             logger.exception("Failed during search_issues")
+            raise
+
+
+    def download_binary(self, url: str, destination: str | Path, chunk_size: int = 8192) -> Path:
+        try:
+            destination_path = Path(destination)
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+            response = self.client._session.get(url, stream=True)
+            response.raise_for_status()
+
+            with destination_path.open("wb") as file_obj:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        file_obj.write(chunk)
+
+            logger.info("Downloaded attachment to %s", destination_path)
+            return destination_path
+        except Exception:
+            logger.exception("Failed to download binary from %s", url)
             raise
 
     def get_issue(self, issue_key: str, fields: list[str]) -> dict[str, Any]:

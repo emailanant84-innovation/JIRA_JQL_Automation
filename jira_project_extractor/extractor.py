@@ -29,6 +29,7 @@ CORE_FIELDS = [
     "subtasks",
     "fixVersions",
     "components",
+    "attachment",
     "customfield_12947",
     "customfield_14646",
     "customfield_14852",

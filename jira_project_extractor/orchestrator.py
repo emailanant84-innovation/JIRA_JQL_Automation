@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 
+from .attachment_extractor import JiraAttachmentExtractor
 from .cleaner import DataCleaner
 from .config import JiraConfig
 from .extractor import JiraProjectExtractor, ProjectQueryFilters
@@ -21,6 +22,7 @@ class JiraExtractionOrchestrator:
             self.config = config
             self.client = JiraApiClient(config)
             self.extractor = JiraProjectExtractor(self.client)
+            self.attachment_extractor = JiraAttachmentExtractor(self.client)
         except Exception:
             logger.exception("Failed to initialize orchestrator")
             raise
@@ -28,6 +30,8 @@ class JiraExtractionOrchestrator:
     def run(self, project_key: str, query_filters: ProjectQueryFilters) -> NormalizedJiraData:
         try:
             raw_issues = self.extractor.extract_project_graph(project_key, query_filters)
+            attachments_root = self.config.downloads_output_dir() / "attachments"
+            self.attachment_extractor.extract_from_bundles(raw_issues, attachments_root)
             normalized = JiraDataNormalizer.normalize(raw_issues)
 
             cleaned = {
